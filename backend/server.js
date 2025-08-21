@@ -6,8 +6,21 @@ const http = require('http');
 const { Server } = require('socket.io');
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
+
+// Load routes
+const authRoutes = require('./routes/auth');
+
+// Use routes
+app.use('/api/auth', authRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something went wrong!' });
+});
 
 mongoose.connect('mongodb://localhost:27017/restaurant-app', {
   useNewUrlParser: true,
@@ -17,9 +30,12 @@ mongoose.connect('mongodb://localhost:27017/restaurant-app', {
 
 // User Schema
 const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, required: true, enum: ['customer', 'chef', 'admin'] },
+  phoneNumber: { type: String, required: true },
+  role: { type: String, required: true, enum: ['customer', 'chef', 'admin'], default: 'customer' },
+  createdAt: { type: Date, default: Date.now }
 });
 
 // Menu Category Schema
