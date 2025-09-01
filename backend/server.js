@@ -6,8 +6,21 @@ const http = require('http');
 const { Server } = require('socket.io');
 const app = express();
 
+// Middleware
 app.use(cors());
 app.use(express.json());
+
+// Load routes
+const authRoutes = require('./routes/auth');
+
+// Use routes
+app.use('/api/auth', authRoutes);
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ message: 'Something went wrong!' });
+});
 
 mongoose.connect('mongodb://localhost:27017/restaurant-app', {
   useNewUrlParser: true,
@@ -15,12 +28,7 @@ mongoose.connect('mongodb://localhost:27017/restaurant-app', {
 }).then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// User Schema
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  role: { type: String, required: true, enum: ['customer', 'chef', 'admin'] },
-});
+// ...existing code...
 
 // Menu Category Schema
 const categorySchema = new mongoose.Schema({
@@ -69,7 +77,7 @@ const userInteractionSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now }
 });
 
-const User = mongoose.model('User', userSchema);
+const User = require('./models/User');
 const Category = mongoose.model('Category', categorySchema);
 const MenuItem = mongoose.model('MenuItem', menuItemSchema);
 const Order = mongoose.model('Order', orderSchema);
@@ -283,11 +291,42 @@ io.on('connection', (socket) => {
   });
 
   // Chef updates order status
-  socket.on('updateOrderStatus', async ({ orderId, status, chefId }) => {
+  socket.on('updateOrderStatus', async ({ orderId, status, chefId, message, tableNumber }) => {
     try {
-      await Order.findByIdAndUpdate(orderId, { status, chefId, updatedAt: Date.now() });
+      const order = await Order.findByIdAndUpdate(orderId, { status, chefId, updatedAt: Date.now() });
       const updatedOrders = await Order.find().populate('chefId', 'email').sort('-createdAt');
+      
+      // Emit the updated orders
       io.emit('orders', updatedOrders);
+      
+      // Always emit the notification with the updated status
+      const tableNumber = order.tableNumber;
+      let notificationMessage = '';
+      switch(status) {
+        case 'accepted':
+          notificationMessage = `Your order has been accepted by the chef`;
+          break;
+        case 'preparing':
+          notificationMessage = `Chef has started preparing your order`;
+          break;
+        case 'ready':
+          notificationMessage = `Your order is ready to be served`;
+          break;
+        case 'completed':
+          notificationMessage = `Your order has been completed`;
+          break;
+        case 'cancelled':
+          notificationMessage = `Your order has been cancelled`;
+          break;
+        default:
+          notificationMessage = `Order status updated to ${status}`;
+      }
+
+      io.emit('orderNotification', {
+        tableNumber,
+        message: notificationMessage,
+        status
+      });
     } catch (err) {
       console.error('Error updating order status:', err);
     }

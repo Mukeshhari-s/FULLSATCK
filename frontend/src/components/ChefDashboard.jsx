@@ -34,8 +34,43 @@ const ChefDashboard = ({ onLogout }) => {
 
   const updateOrderStatus = async (orderId, status) => {
     try {
+      // Update via HTTP endpoint
       await axios.put(`http://localhost:5000/api/orders/${orderId}/status`, { status });
-      // The socket will automatically update the orders
+      
+      // Find the order to get the table number
+      const order = orders.find(o => o._id === orderId);
+      if (!order) return;
+
+      // Generate notification message
+      let message = '';
+      switch(status) {
+        case 'accepted':
+          message = `Your order has been accepted by the chef`;
+          break;
+        case 'preparing':
+          message = `Chef has started preparing your order`;
+          break;
+        case 'ready':
+          message = `Your order is ready to be served`;
+          break;
+        case 'completed':
+          message = `Your order has been completed`;
+          break;
+        case 'cancelled':
+          message = `Your order has been cancelled`;
+          break;
+        default:
+          message = `Order status updated to ${status}`;
+      }
+
+      // Emit via socket for real-time updates with the notification message
+      socketRef.current.emit('updateOrderStatus', {
+        orderId,
+        status,
+        tableNumber: order.tableNumber,
+        message,
+        chefId: null // We're not tracking chef ID in this implementation
+      });
     } catch (err) {
       console.error('Error updating order status:', err);
       alert('Failed to update order status');
