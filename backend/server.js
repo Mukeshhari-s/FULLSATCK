@@ -28,7 +28,15 @@ mongoose.connect('mongodb://localhost:27017/restaurant-app', {
 }).then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// ...existing code...
+// User Schema
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  phoneNumber: { type: String, required: true },
+  role: { type: String, required: true, enum: ['customer', 'chef', 'admin'], default: 'customer' },
+  createdAt: { type: Date, default: Date.now }
+});
 
 // Menu Category Schema
 const categorySchema = new mongoose.Schema({
