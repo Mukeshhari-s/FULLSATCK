@@ -12,6 +12,16 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Clear all reservations (for testing)
+router.delete('/clear-all', async (req, res) => {
+    try {
+        await TableReservation.deleteMany({});
+        res.json({ message: 'All reservations cleared successfully' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // Get reservations for a specific date
 router.get('/date/:date', async (req, res) => {
     try {
@@ -36,20 +46,28 @@ router.get('/date/:date', async (req, res) => {
 router.get('/check-availability', async (req, res) => {
     try {
         const { date, time, tableNumber } = req.query;
-        const reservationDate = new Date(date);
+        console.log('Checking availability for:', { date, time, tableNumber });
         
+        // Create date object properly
+        const reservationDate = new Date(date);
+        console.log('Parsed reservation date:', reservationDate);
+        
+        // Find existing reservations for the same table, date, and time
         const existingReservation = await TableReservation.findOne({
-            tableNumber,
+            tableNumber: parseInt(tableNumber),
             reservationDate: {
-                $gte: new Date(reservationDate.setHours(0, 0, 0, 0)),
-                $lt: new Date(reservationDate.setHours(23, 59, 59, 999))
+                $gte: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate()),
+                $lt: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1)
             },
             reservationTime: time,
             status: { $in: ['pending', 'confirmed'] }
         });
 
+        console.log('Existing reservation found:', existingReservation);
+        
         res.json({ isAvailable: !existingReservation });
     } catch (err) {
+        console.error('Error checking availability:', err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -57,26 +75,50 @@ router.get('/check-availability', async (req, res) => {
 // Create a new reservation
 router.post('/', async (req, res) => {
     try {
+        console.log('Creating reservation with data:', req.body);
+        
+        // Parse date properly
+        const reservationDate = new Date(req.body.reservationDate);
+        
         // Check if table is already reserved
         const existingReservation = await TableReservation.findOne({
-            tableNumber: req.body.tableNumber,
-            reservationDate: req.body.reservationDate,
+            tableNumber: parseInt(req.body.tableNumber),
+            reservationDate: {
+                $gte: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate()),
+                $lt: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1)
+            },
             reservationTime: req.body.reservationTime,
             status: { $in: ['pending', 'confirmed'] }
         });
+
+        console.log('Existing reservation check:', existingReservation);
 
         if (existingReservation) {
             return res.status(400).json({ message: 'Table is already reserved for this time' });
         }
 
-        const reservation = new TableReservation(req.body);
+        // Create reservation with proper data types
+        const reservationData = {
+            ...req.body,
+            tableNumber: parseInt(req.body.tableNumber),
+            numberOfGuests: parseInt(req.body.numberOfGuests),
+            reservationDate: reservationDate,
+            status: 'pending'
+        };
+
+        const reservation = new TableReservation(reservationData);
         const newReservation = await reservation.save();
         
+        console.log('New reservation created:', newReservation);
+        
         // Emit socket event for real-time updates
-        req.app.get('io').emit('newReservation', newReservation);
+        if (req.app.get('io')) {
+            req.app.get('io').emit('newReservation', newReservation);
+        }
         
         res.status(201).json(newReservation);
     } catch (err) {
+        console.error('Error creating reservation:', err);
         res.status(400).json({ message: err.message });
     }
 });
@@ -96,11 +138,35 @@ router.patch('/:id', async (req, res) => {
         const updatedReservation = await reservation.save();
         
         // Emit socket event for real-time updates
-        req.app.get('io').emit('updateReservation', updatedReservation);
+        if (req.app.get('io')) {
+            req.app.get('io').emit('updateReservation', updatedReservation);
+        }
         
         res.json(updatedReservation);
     } catch (err) {
         res.status(400).json({ message: err.message });
+    }
+});
+
+// Confirm a reservation
+router.patch('/:id/confirm', async (req, res) => {
+    try {
+        const reservation = await TableReservation.findById(req.params.id);
+        if (!reservation) {
+            return res.status(404).json({ message: 'Reservation not found' });
+        }
+
+        reservation.status = 'confirmed';
+        const confirmedReservation = await reservation.save();
+        
+        // Emit socket event for real-time updates
+        if (req.app.get('io')) {
+            req.app.get('io').emit('confirmReservation', confirmedReservation);
+        }
+        
+        res.json({ message: 'Reservation confirmed', reservation: confirmedReservation });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
     }
 });
 
@@ -113,12 +179,14 @@ router.delete('/:id', async (req, res) => {
         }
 
         reservation.status = 'cancelled';
-        await reservation.save();
+        const cancelledReservation = await reservation.save();
         
         // Emit socket event for real-time updates
-        req.app.get('io').emit('cancelReservation', reservation);
+        if (req.app.get('io')) {
+            req.app.get('io').emit('cancelReservation', cancelledReservation);
+        }
         
-        res.json({ message: 'Reservation cancelled' });
+        res.json({ message: 'Reservation cancelled', reservation: cancelledReservation });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

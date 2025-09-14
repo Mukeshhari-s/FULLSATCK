@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
+import { io } from 'socket.io-client';
 
 // Use environment variable for Unsplash API key
 const UNSPLASH_ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
@@ -64,6 +65,9 @@ const AdminDashboard = ({ onLogout }) => {
   const ordersPerPage = 5;
   const [unsplashImages, setUnsplashImages] = useState([]);
   const [dishImages, setDishImages] = useState({});
+
+  // Socket.IO connection
+  const socket = io('http://localhost:5000');
 
   // Fetch data from API
   const fetchOrders = async () => {
@@ -143,19 +147,91 @@ const AdminDashboard = ({ onLogout }) => {
     }
   };
 
+  const fetchReservations = async () => {
+    try {
+      console.log('Fetching reservations...');
+      const response = await api.get('/reservations');
+      console.log('Reservations response:', response.data);
+      setReservations(response.data);
+    } catch (err) {
+      console.error('Error fetching reservations:', err);
+    }
+  };
+
+  const handleDeleteReservation = async (reservationId) => {
+    if (window.confirm('Are you sure you want to cancel this reservation?')) {
+      try {
+        await api.delete(`/reservations/${reservationId}`);
+        await fetchReservations(); // Refresh the list
+        alert('Reservation cancelled successfully!');
+      } catch (err) {
+        console.error('Error cancelling reservation:', err);
+        alert('Failed to cancel reservation');
+      }
+    }
+  };
+
+  const handleConfirmReservation = async (reservationId) => {
+    if (window.confirm('Are you sure you want to confirm this reservation?')) {
+      try {
+        await api.patch(`/reservations/${reservationId}/confirm`);
+        await fetchReservations(); // Refresh the list
+        alert('Reservation confirmed successfully!');
+      } catch (err) {
+        console.error('Error confirming reservation:', err);
+        alert('Failed to confirm reservation');
+      }
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchOrders(), fetchMenu(), fetchCategories()]);
+      await Promise.all([fetchOrders(), fetchMenu(), fetchCategories(), fetchReservations()]);
       setLoading(false);
     };
     loadData();
+
+    // Socket.IO event listeners for real-time updates
+    socket.on('newReservation', (reservation) => {
+      console.log('New reservation received:', reservation);
+      setReservations(prev => [...prev, reservation]);
+    });
+
+    socket.on('updateReservation', (updatedReservation) => {
+      console.log('Reservation updated:', updatedReservation);
+      setReservations(prev => 
+        prev.map(res => res._id === updatedReservation._id ? updatedReservation : res)
+      );
+    });
+
+    socket.on('confirmReservation', (confirmedReservation) => {
+      console.log('Reservation confirmed:', confirmedReservation);
+      setReservations(prev => 
+        prev.map(res => res._id === confirmedReservation._id ? confirmedReservation : res)
+      );
+    });
+
+    socket.on('cancelReservation', (cancelledReservation) => {
+      console.log('Reservation cancelled:', cancelledReservation);
+      setReservations(prev => 
+        prev.map(res => res._id === cancelledReservation._id ? cancelledReservation : res)
+      );
+    });
 
     // Load admin data from localStorage
     const storedAdminData = localStorage.getItem('admin-data');
     if (storedAdminData) {
       setAdminData(JSON.parse(storedAdminData));
     }
+
+    // Cleanup function
+    return () => {
+      socket.off('newReservation');
+      socket.off('updateReservation');
+      socket.off('confirmReservation');
+      socket.off('cancelReservation');
+    };
   }, []);
 
   // Save admin data to localStorage whenever it changes
@@ -393,6 +469,110 @@ const AdminDashboard = ({ onLogout }) => {
       <main>
         <h2>Admin Dashboard</h2>
         <p>Welcome, Admin! This is your dashboard for managing the restaurant.</p>
+
+        {/* Reservations Section */}
+        <section style={{ marginTop: 30 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h3>Table Reservations ({reservations.length})</h3>
+            <button 
+              onClick={() => fetchReservations()} 
+              style={{ 
+                backgroundColor: '#007bff', 
+                color: 'white', 
+                border: 'none', 
+                padding: '8px 16px', 
+                borderRadius: '4px', 
+                cursor: 'pointer' 
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+          <ul style={{ listStyleType: 'none', padding: 0 }}>
+            {reservations.length === 0 ? (
+              <li style={{ textAlign: 'center', color: '#666', fontStyle: 'italic', padding: '20px' }}>
+                No reservations found.
+              </li>
+            ) : (
+              reservations.map(reservation => (
+                <li key={reservation._id} style={{ 
+                  border: '1px solid #ddd', 
+                  borderRadius: 8, 
+                  margin: '10px 0', 
+                  padding: 15, 
+                  backgroundColor: reservation.status === 'cancelled' ? '#ffe6e6' : '#f9f9f9',
+                  position: 'relative',
+                  opacity: reservation.status === 'cancelled' ? 0.7 : 1
+                }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <b>Guest Name:</b> {reservation.guestName} <br />
+                      <b>Email:</b> {reservation.email} <br />
+                      <b>Phone:</b> {reservation.phone} <br />
+                      <b>Table Number:</b> {reservation.tableNumber} <br />
+                    </div>
+                    <div>
+                      <b>Party Size:</b> {reservation.partySize || reservation.numberOfGuests} guests <br />
+                      <b>Date:</b> {new Date(reservation.date || reservation.reservationDate).toLocaleDateString()} <br />
+                      <b>Time:</b> {reservation.time || reservation.reservationTime} <br />
+                      <b>Status:</b> <span style={{ 
+                        color: reservation.status === 'cancelled' ? '#dc3545' : 
+                               reservation.status === 'confirmed' ? '#28a745' : '#ffc107',
+                        fontWeight: 'bold'
+                      }}>{reservation.status || 'pending'}</span> <br />
+                      <b>Reserved On:</b> {new Date(reservation.createdAt).toLocaleString()} <br />
+                    </div>
+                  </div>
+                  {reservation.specialRequests && (
+                    <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#fff', borderRadius: '4px' }}>
+                      <b>Special Requests:</b> {reservation.specialRequests}
+                    </div>
+                  )}
+                  <div style={{ 
+                    position: 'absolute',
+                    top: '10px',
+                    right: '10px',
+                    display: 'flex',
+                    gap: '5px'
+                  }}>
+                    {reservation.status === 'pending' && (
+                      <button 
+                        onClick={() => handleConfirmReservation(reservation._id)}
+                        style={{ 
+                          backgroundColor: '#28a745', 
+                          color: 'white', 
+                          border: 'none', 
+                          padding: '4px 8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Accept
+                      </button>
+                    )}
+                    {reservation.status !== 'cancelled' && (
+                      <button 
+                        onClick={() => handleDeleteReservation(reservation._id)}
+                        style={{ 
+                          backgroundColor: '#dc3545', 
+                          color: 'white', 
+                          border: 'none', 
+                          padding: '4px 8px', 
+                          borderRadius: '4px', 
+                          cursor: 'pointer',
+                          fontSize: '12px'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
 
         {/* Order History Section */}
         <section style={{ marginTop: 30 }}>

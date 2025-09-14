@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 import { io } from 'socket.io-client';
 import './TableReservation.css';
 
@@ -17,6 +17,7 @@ const TableReservation = () => {
     const [existingReservations, setExistingReservations] = useState([]);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [myReservations, setMyReservations] = useState([]);
     const socket = io('http://localhost:5000');
 
     useEffect(() => {
@@ -24,6 +25,7 @@ const TableReservation = () => {
         socket.on('newReservation', handleNewReservation);
         socket.on('updateReservation', handleUpdateReservation);
         socket.on('cancelReservation', handleCancelReservation);
+        socket.on('confirmReservation', handleConfirmReservation);
 
         // Check for upcoming reservations every minute
         const interval = setInterval(checkUpcomingReservations, 60000);
@@ -32,13 +34,31 @@ const TableReservation = () => {
             socket.off('newReservation');
             socket.off('updateReservation');
             socket.off('cancelReservation');
+            socket.off('confirmReservation');
             clearInterval(interval);
         };
     }, []);
 
     useEffect(() => {
         loadExistingReservations();
+        loadMyReservations();
     }, [reservationData.reservationDate]);
+
+    const loadMyReservations = () => {
+        // Filter reservations for the current user based on email if entered
+        if (reservationData.customerEmail) {
+            const userReservations = existingReservations.filter(
+                res => res.email === reservationData.customerEmail
+            );
+            setMyReservations(userReservations);
+        } else {
+            // Try to load from localStorage
+            const savedReservations = localStorage.getItem('myReservations');
+            if (savedReservations) {
+                setMyReservations(JSON.parse(savedReservations));
+            }
+        }
+    };
 
     const handleNewReservation = (reservation) => {
         setExistingReservations(prev => [...prev, reservation]);
@@ -53,8 +73,40 @@ const TableReservation = () => {
 
     const handleCancelReservation = (cancelledReservation) => {
         setExistingReservations(prev => 
-            prev.filter(res => res._id !== cancelledReservation._id)
+            prev.map(res => res._id === cancelledReservation._id ? cancelledReservation : res)
         );
+        
+        // Update user's reservations
+        const savedReservations = JSON.parse(localStorage.getItem('myReservations') || '[]');
+        const updatedMyReservations = savedReservations.map(res => 
+            res._id === cancelledReservation._id ? cancelledReservation : res
+        );
+        localStorage.setItem('myReservations', JSON.stringify(updatedMyReservations));
+        setMyReservations(updatedMyReservations);
+        
+        // Show notification to user if their reservation was cancelled
+        if (cancelledReservation.status === 'cancelled') {
+            alert(`Your reservation for Table ${cancelledReservation.tableNumber} has been cancelled by the restaurant.`);
+        }
+    };
+
+    const handleConfirmReservation = (confirmedReservation) => {
+        setExistingReservations(prev => 
+            prev.map(res => res._id === confirmedReservation._id ? confirmedReservation : res)
+        );
+        
+        // Update user's reservations
+        const savedReservations = JSON.parse(localStorage.getItem('myReservations') || '[]');
+        const updatedMyReservations = savedReservations.map(res => 
+            res._id === confirmedReservation._id ? confirmedReservation : res
+        );
+        localStorage.setItem('myReservations', JSON.stringify(updatedMyReservations));
+        setMyReservations(updatedMyReservations);
+        
+        // Show notification to user if their reservation was confirmed
+        if (confirmedReservation.status === 'confirmed') {
+            alert(`Your reservation for Table ${confirmedReservation.tableNumber} has been confirmed!`);
+        }
     };
 
     const checkUpcomingReservations = () => {
@@ -73,7 +125,7 @@ const TableReservation = () => {
         if (!reservationData.reservationDate) return;
 
         try {
-            const response = await axios.get(`http://localhost:5000/api/reservations/date/${reservationData.reservationDate}`);
+            const response = await api.get(`/reservations/date/${reservationData.reservationDate}`);
             setExistingReservations(response.data);
         } catch (err) {
             console.error('Error loading reservations:', err);
@@ -105,7 +157,13 @@ const TableReservation = () => {
             }
 
             // Check availability
-            const availabilityResponse = await axios.get(`http://localhost:5000/api/reservations/check-availability`, {
+            console.log('Checking availability for:', {
+                date: reservationData.reservationDate,
+                time: reservationData.reservationTime,
+                tableNumber: reservationData.tableNumber
+            });
+            
+            const availabilityResponse = await api.get(`/reservations/check-availability`, {
                 params: {
                     date: reservationData.reservationDate,
                     time: reservationData.reservationTime,
@@ -113,13 +171,23 @@ const TableReservation = () => {
                 }
             });
 
+            console.log('Availability response:', availabilityResponse.data);
+
             if (!availabilityResponse.data.isAvailable) {
                 setError('This table is already reserved for the selected time');
                 return;
             }
 
             // Create reservation
-            const response = await axios.post('http://localhost:5000/api/reservations', reservationData);
+            const response = await api.post('/reservations', reservationData);
+            console.log('Reservation created:', response.data);
+            
+            // Save to user's reservations
+            const savedReservations = JSON.parse(localStorage.getItem('myReservations') || '[]');
+            savedReservations.push(response.data);
+            localStorage.setItem('myReservations', JSON.stringify(savedReservations));
+            setMyReservations(savedReservations);
+            
             setSuccess('Reservation created successfully!');
             setReservationData({
                 customerName: '',
@@ -144,9 +212,39 @@ const TableReservation = () => {
         }));
     };
 
+    const clearAllReservations = async () => {
+        if (window.confirm('Are you sure you want to clear all reservations? This action cannot be undone.')) {
+            try {
+                await api.delete('/reservations/clear-all');
+                setSuccess('All reservations cleared successfully!');
+                setExistingReservations([]);
+                loadExistingReservations();
+            } catch (err) {
+                setError('Error clearing reservations: ' + (err.response?.data?.message || err.message));
+            }
+        }
+    };
+
     return (
         <div className="table-reservation-container">
-            <h2>Table Reservation</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h2>Table Reservation</h2>
+                <button 
+                    type="button" 
+                    onClick={clearAllReservations}
+                    style={{
+                        backgroundColor: '#ff4444',
+                        color: 'white',
+                        border: 'none',
+                        padding: '8px 16px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                    }}
+                >
+                    Clear All Reservations (Test)
+                </button>
+            </div>
             
             {error && <div className="error-message">{error}</div>}
             {success && <div className="success-message">{success}</div>}
@@ -258,17 +356,64 @@ const TableReservation = () => {
                 <button type="submit" className="submit-button">Make Reservation</button>
             </form>
 
+            {/* My Reservations Section */}
+            {myReservations.length > 0 && (
+                <div className="existing-reservations">
+                    <h3>My Reservations</h3>
+                    <div className="reservations-list">
+                        {myReservations.map(reservation => (
+                            <div key={reservation._id} className={`reservation-item ${reservation.status === 'cancelled' ? 'cancelled-reservation' : ''}`}>
+                                <div>
+                                    <strong>Table {reservation.tableNumber}</strong>
+                                    <br />
+                                    <small>{reservation.guestName || reservation.customerName || 'You'}</small>
+                                </div>
+                                <div>
+                                    <span>{new Date(reservation.reservationDate || reservation.date).toLocaleDateString()}</span>
+                                    <br />
+                                    <small>{reservation.reservationTime || reservation.time}</small>
+                                </div>
+                                <div>
+                                    <span>{reservation.numberOfGuests || reservation.partySize} guests</span>
+                                    <br />
+                                    <span className={`status ${reservation.status || 'pending'}`}>
+                                        {(reservation.status || 'pending').toUpperCase()}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div className="existing-reservations">
                 <h3>Today's Reservations</h3>
                 <div className="reservations-list">
-                    {existingReservations.map(reservation => (
-                        <div key={reservation._id} className="reservation-item">
-                            <span>Table {reservation.tableNumber}</span>
-                            <span>{new Date(reservation.reservationDate).toLocaleDateString()}</span>
-                            <span>{reservation.reservationTime}</span>
-                            <span className={`status ${reservation.status}`}>{reservation.status}</span>
-                        </div>
-                    ))}
+                    {existingReservations.length === 0 ? (
+                        <p>No reservations for today.</p>
+                    ) : (
+                        existingReservations.map(reservation => (
+                            <div key={reservation._id} className={`reservation-item ${reservation.status === 'cancelled' ? 'cancelled-reservation' : ''}`}>
+                                <div>
+                                    <strong>Table {reservation.tableNumber}</strong>
+                                    <br />
+                                    <small>{reservation.guestName || 'Guest'}</small>
+                                </div>
+                                <div>
+                                    <span>{new Date(reservation.reservationDate || reservation.date).toLocaleDateString()}</span>
+                                    <br />
+                                    <small>{reservation.reservationTime || reservation.time}</small>
+                                </div>
+                                <div>
+                                    <span>{reservation.numberOfGuests || reservation.partySize} guests</span>
+                                    <br />
+                                    <span className={`status ${reservation.status || 'pending'}`}>
+                                        {(reservation.status || 'pending').toUpperCase()}
+                                    </span>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </div>
