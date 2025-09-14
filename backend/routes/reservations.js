@@ -25,34 +25,30 @@ router.get('/date/:date', async (req, res) => {
                 $gte: date,
                 $lt: nextDate
             }
-        }).sort({ reservationDate: 1 });
+        });
         res.json(reservations);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Check availability for a specific date, time, and table
+// Check table availability
 router.get('/check-availability', async (req, res) => {
     try {
         const { date, time, tableNumber } = req.query;
-        
-        if (!date || !time || !tableNumber) {
-            return res.status(400).json({ message: 'Date, time, and table number are required' });
-        }
-
-        const reservationDateTime = new Date(`${date}T${time}`);
+        const reservationDate = new Date(date);
         
         const existingReservation = await TableReservation.findOne({
-            tableNumber: parseInt(tableNumber),
-            reservationDate: reservationDateTime,
+            tableNumber,
+            reservationDate: {
+                $gte: new Date(reservationDate.setHours(0, 0, 0, 0)),
+                $lt: new Date(reservationDate.setHours(23, 59, 59, 999))
+            },
+            reservationTime: time,
             status: { $in: ['pending', 'confirmed'] }
         });
 
-        res.json({ 
-            available: !existingReservation,
-            message: existingReservation ? 'Table is already reserved for this time' : 'Table is available'
-        });
+        res.json({ isAvailable: !existingReservation });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -61,12 +57,11 @@ router.get('/check-availability', async (req, res) => {
 // Create a new reservation
 router.post('/', async (req, res) => {
     try {
-        const { tableNumber, reservationDate, customerName, customerPhone, customerEmail, partySize } = req.body;
-        
-        // Check if table is already reserved for this time
+        // Check if table is already reserved
         const existingReservation = await TableReservation.findOne({
-            tableNumber,
-            reservationDate: new Date(reservationDate),
+            tableNumber: req.body.tableNumber,
+            reservationDate: req.body.reservationDate,
+            reservationTime: req.body.reservationTime,
             status: { $in: ['pending', 'confirmed'] }
         });
 
@@ -74,53 +69,56 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Table is already reserved for this time' });
         }
 
-        const reservation = new TableReservation({
-            tableNumber,
-            reservationDate: new Date(reservationDate),
-            customerName,
-            customerPhone,
-            customerEmail,
-            partySize,
-            status: 'pending'
-        });
-
-        await reservation.save();
-        res.status(201).json(reservation);
+        const reservation = new TableReservation(req.body);
+        const newReservation = await reservation.save();
+        
+        // Emit socket event for real-time updates
+        req.app.get('io').emit('newReservation', newReservation);
+        
+        res.status(201).json(newReservation);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(400).json({ message: err.message });
     }
 });
 
-// Update reservation status
+// Update a reservation
 router.patch('/:id', async (req, res) => {
     try {
-        const { status } = req.body;
         const reservation = await TableReservation.findById(req.params.id);
-        
         if (!reservation) {
             return res.status(404).json({ message: 'Reservation not found' });
         }
 
-        reservation.status = status;
-        await reservation.save();
+        Object.keys(req.body).forEach(key => {
+            reservation[key] = req.body[key];
+        });
+
+        const updatedReservation = await reservation.save();
         
-        res.json(reservation);
+        // Emit socket event for real-time updates
+        req.app.get('io').emit('updateReservation', updatedReservation);
+        
+        res.json(updatedReservation);
     } catch (err) {
-        res.status(500).json({ message: err.message });
+        res.status(400).json({ message: err.message });
     }
 });
 
-// Delete a reservation
+// Cancel a reservation
 router.delete('/:id', async (req, res) => {
     try {
         const reservation = await TableReservation.findById(req.params.id);
-        
         if (!reservation) {
             return res.status(404).json({ message: 'Reservation not found' });
         }
 
-        await TableReservation.findByIdAndDelete(req.params.id);
-        res.json({ message: 'Reservation deleted successfully' });
+        reservation.status = 'cancelled';
+        await reservation.save();
+        
+        // Emit socket event for real-time updates
+        req.app.get('io').emit('cancelReservation', reservation);
+        
+        res.json({ message: 'Reservation cancelled' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
