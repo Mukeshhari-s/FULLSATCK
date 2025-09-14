@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import axios from 'axios';
+import api from '../utils/api';
 
 // Use environment variable for Unsplash API key
 const UNSPLASH_ACCESS_KEY = import.meta.env.VITE_UNSPLASH_ACCESS_KEY;
@@ -20,11 +20,31 @@ const fetchUnsplashImages = async (query, count = 5) => {
   return [];
 };
 
+// Fetch single dish image
+const fetchDishImage = async (dishName) => {
+  try {
+    const response = await fetch(
+      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(dishName + ' food')}&per_page=1`,
+      {
+        headers: {
+          'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
+        }
+      }
+    );
+    const data = await response.json();
+    return data.results[0]?.urls?.small || null;
+  } catch (error) {
+    console.error('Error fetching dish image:', error);
+    return null;
+  }
+};
+
 const AdminDashboard = ({ onLogout }) => {
   const [adminData, setAdminData] = useState({});
   const [orders, setOrders] = useState([]);
   const [menu, setMenu] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [reservations, setReservations] = useState([]);
   const [editDish, setEditDish] = useState(null);
   const [editCategory, setEditCategory] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', price: '', photo: '', description: '' });
@@ -43,11 +63,12 @@ const AdminDashboard = ({ onLogout }) => {
   const [chefOrderPage, setChefOrderPage] = useState(1);
   const ordersPerPage = 5;
   const [unsplashImages, setUnsplashImages] = useState([]);
+  const [dishImages, setDishImages] = useState({});
 
   // Fetch data from API
   const fetchOrders = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/orders');
+      const response = await api.get('/orders');
       setOrders(response.data);
     } catch (err) {
       console.error('Error fetching orders:', err);
@@ -56,19 +77,69 @@ const AdminDashboard = ({ onLogout }) => {
 
   const fetchMenu = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/menu/items');
+      console.log('Fetching menu items...');
+      const response = await api.get('/menu/items');
+      console.log('Menu items response:', response.data);
       setMenu(response.data);
+      
+      // Load images for all menu items
+      const imagePromises = response.data.map(async (item) => {
+        const imageUrl = await fetchDishImage(item.title);
+        return { id: item._id, imageUrl };
+      });
+      
+      const images = await Promise.all(imagePromises);
+      const imageMap = images.reduce((acc, { id, imageUrl }) => {
+        acc[id] = imageUrl;
+        return acc;
+      }, {});
+      
+      setDishImages(imageMap);
     } catch (err) {
       console.error('Error fetching menu:', err);
+      // Try public route as fallback
+      try {
+        console.log('Trying public menu items route...');
+        const response = await api.get('/menu/public/items');
+        console.log('Public menu items response:', response.data);
+        setMenu(response.data);
+        
+        // Load images for fallback data too
+        const imagePromises = response.data.map(async (item) => {
+          const imageUrl = await fetchDishImage(item.title);
+          return { id: item._id, imageUrl };
+        });
+        
+        const images = await Promise.all(imagePromises);
+        const imageMap = images.reduce((acc, { id, imageUrl }) => {
+          acc[id] = imageUrl;
+          return acc;
+        }, {});
+        
+        setDishImages(imageMap);
+      } catch (publicErr) {
+        console.error('Error fetching public menu items:', publicErr);
+      }
     }
   };
 
   const fetchCategories = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/menu/categories');
+      console.log('Fetching categories...');
+      const response = await api.get('/menu/categories');
+      console.log('Categories response:', response.data);
       setCategories(response.data);
     } catch (err) {
       console.error('Error fetching categories:', err);
+      // Try public route as fallback
+      try {
+        console.log('Trying public categories route...');
+        const response = await api.get('/menu/public/categories');
+        console.log('Public categories response:', response.data);
+        setCategories(response.data);
+      } catch (publicErr) {
+        console.error('Error fetching public categories:', publicErr);
+      }
     }
   };
 
@@ -96,7 +167,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleNewCategorySubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/menu/categories', {
+      await api.post('/menu/categories', {
         name: newCategoryForm.name,
         filter: newCategoryForm.filter,
         dishesPerCategory: parseInt(newCategoryForm.dishesPerCategory),
@@ -128,7 +199,7 @@ const AdminDashboard = ({ onLogout }) => {
 
   const handleEditCategorySave = async () => {
     try {
-      await axios.put(`http://localhost:5000/api/menu/categories/${editCategory}`, {
+      await api.put(`/menu/categories/${editCategory}`, {
         name: editCategoryForm.name,
         filter: editCategoryForm.filter,
         dishesPerCategory: parseInt(editCategoryForm.dishesPerCategory),
@@ -150,7 +221,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDeleteCategory = async (categoryId) => {
     if (window.confirm('Are you sure you want to delete this category? This will also delete all menu items in this category.')) {
       try {
-        await axios.delete(`http://localhost:5000/api/menu/categories/${categoryId}`);
+        await api.delete(`/menu/categories/${categoryId}`);
         await fetchMenu();
         await fetchCategories();
         alert('Category deleted successfully!');
@@ -165,7 +236,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleNewDishSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/menu/items', {
+      await api.post('/menu/items', {
         categoryId: newDishForm.categoryId,
         title: newDishForm.title,
         price: parseFloat(newDishForm.price),
@@ -198,7 +269,7 @@ const AdminDashboard = ({ onLogout }) => {
 
   const handleEditSave = async () => {
     try {
-      await axios.put(`http://localhost:5000/api/menu/items/${editDish}`, {
+      await api.put(`/menu/items/${editDish}`, {
         title: editForm.name,
         price: parseFloat(editForm.price),
         image: editForm.photo,
@@ -220,7 +291,7 @@ const AdminDashboard = ({ onLogout }) => {
   const handleDeleteItem = async (itemId) => {
     if (window.confirm('Are you sure you want to delete this item?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/menu/items/${itemId}`);
+        await api.delete(`/menu/items/${itemId}`);
         await fetchMenu(); // Refresh menu data
         alert('Menu item deleted successfully!');
       } catch (err) {
@@ -653,7 +724,20 @@ const AdminDashboard = ({ onLogout }) => {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <img src={dish.image} alt={dish.title} style={{ width: 60, height: 60, marginRight: 10 }} />
+                    <div style={{ width: 60, height: 60, marginRight: 10, overflow: 'hidden', borderRadius: '4px', backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {dishImages[dish._id] ? (
+                        <img 
+                          src={dishImages[dish._id]} 
+                          alt={dish.title} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            e.target.src = dish.image || '/default-dish.png';
+                          }}
+                        />
+                      ) : (
+                        <div style={{ fontSize: '10px', textAlign: 'center', color: '#666' }}>Loading...</div>
+                      )}
+                    </div>
                     <div style={{ flex: 1 }}>
                       <b>{dish.title}</b> - ${dish.price} <br />
                       <span>{dish.description}</span> <br />

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../utils/api';
 
 const Login = ({ onLogin }) => {
   const [email, setEmail] = useState('');
@@ -19,8 +19,13 @@ const Login = ({ onLogin }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', { email, password, role });
-      onLogin(response.data.user);
+      const response = await api.post('/auth/login', { email, password, role });
+      const userData = {
+        ...response.data.user,
+        token: response.data.token
+      };
+      localStorage.setItem('user', JSON.stringify(userData)); // Save user data including token
+      onLogin(userData);
       navigate(`/${role}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
@@ -30,7 +35,7 @@ const Login = ({ onLogin }) => {
   return (
     <div className="login-container">
       <h2>Welcome Back!</h2>
-      <p>Please log in to your account.</p>
+      <p>Please log in to your account or <Link to="/guest" style={{ color: '#4CAF50', textDecoration: 'none' }}>continue as guest</Link>.</p>
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label htmlFor="email">Email:</label>

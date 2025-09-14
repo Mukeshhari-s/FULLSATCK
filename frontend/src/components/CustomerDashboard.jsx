@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import axios from 'axios';
+import api from '../utils/api';
 import MenuItem from './MenuItem';
 import fetchDishImage from '../utils/unsplash';
 
@@ -38,9 +38,13 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   const fetchMenuData = async () => {
     try {
       const [categoriesResponse, itemsResponse] = await Promise.all([
-        axios.get('http://localhost:5000/api/menu/categories'),
-        axios.get('http://localhost:5000/api/menu/items')
+        api.get('/menu/public/categories'),
+        api.get('/menu/public/items')
       ]);
+      
+      console.log('Categories Response:', categoriesResponse.data);
+      console.log('Menu Items Response:', itemsResponse.data);
+      console.log('Sample Menu Item Structure:', itemsResponse.data[0]);
       
       setCategories(categoriesResponse.data);
       setMenuItems(itemsResponse.data);
@@ -52,13 +56,12 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   };
 
   // Fetch orders data for the current table
-  const fetchOrders = async () => {
+    const fetchOrders = async () => {
     try {
-      if (!tableNumber) return;
-      const response = await axios.get(`http://localhost:5000/api/orders/customer/${tableNumber}`);
-      console.log('Fetched orders for table', tableNumber, ':', response.data);
-      const tableOrders = response.data.filter(order => order.tableNumber.toString() === tableNumber.toString());
-      setOrders(tableOrders);
+      if (tableNumber) {
+        const response = await api.get(`/orders/customer/${tableNumber}`);
+        setOrders(response.data);
+      }
     } catch (err) {
       console.error('Error fetching orders:', err);
     }
@@ -66,7 +69,19 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
 
   // Group menu items by category
   const groupedItems = categories.reduce((acc, category) => {
-    acc[category.filter] = menuItems.filter(item => item.categoryId._id === category._id);
+    console.log('Processing category:', category);
+    const categoryItems = menuItems.filter(item => {
+      console.log('Checking item:', item);
+      console.log('Item categoryId:', item.categoryId);
+      console.log('Category _id:', category._id);
+      return (
+        (item.categoryId?._id === category._id) || // Populated categoryId
+        (item.categoryId === category._id) || // Direct ID reference
+        (item.category === category._id) // Alternative field name
+      );
+    });
+    console.log(`Found ${categoryItems.length} items for category ${category.name}`);
+    acc[category.filter] = categoryItems;
     return acc;
   }, {});
 
@@ -152,7 +167,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   const clearOrders = async () => {
     if (window.confirm('Are you sure you want to clear all orders? This cannot be undone.')) {
       try {
-        await axios.delete(`http://localhost:5000/api/orders/customer/${tableNumber}`);
+        await api.delete(`/orders/customer/${tableNumber}`);
         setOrders([]);
         setOrderHistory([]);
         localStorage.removeItem(`orderHistory-${tableNumber}`);
@@ -164,9 +179,64 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     }
   };
 
-  const placeOrder = () => {
+  const calculateTotal = () => {
+    return cart.reduce((total, item) => total + item.price, 0);
+  };
+
+  const initiatePayment = async () => {
+    try {
+      const response = await api.post('/payment/create-order', {
+        amount: calculateTotal(),
+        tableNumber,
+        items: cart
+      });
+
+      const options = {
+        key: response.data.key,
+        amount: response.data.amount,
+        currency: response.data.currency,
+        name: "Restaurant App",
+        description: "Payment for food order",
+        order_id: response.data.orderId,
+        handler: async (response) => {
+          try {
+            const verifyResponse = await api.post('/payment/verify', {
+              orderCreationId: response.data.orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpayOrderId: response.razorpay_order_id,
+              razorpaySignature: response.razorpay_signature,
+              tableNumber
+            });
+
+            if (verifyResponse.data.message === 'Payment verified successfully') {
+              placeOrder(verifyResponse.data.order);
+            }
+          } catch (err) {
+            console.error('Payment verification failed:', err);
+            alert('Payment verification failed. Please try again.');
+          }
+        },
+        prefill: {
+          name: "Customer",
+          email: "customer@example.com",
+          contact: "9999999999"
+        },
+        theme: {
+          color: "#3399cc"
+        }
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    } catch (err) {
+      console.error('Payment initiation failed:', err);
+      alert('Could not initiate payment. Please try again.');
+    }
+  };
+
+  const placeOrder = (verifiedOrder) => {
     const order = {
-      id: `${tableNumber}-${Date.now()}`,
+      id: verifiedOrder._id,
       tableNumber,
       items: cart,
       status: 'placed',
@@ -182,7 +252,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     setCart([]);
     localStorage.setItem(`cart-${tableNumber}`, JSON.stringify([]));
     
-    alert('Your order has been placed!');
+    alert('Your order has been placed successfully!');
     setShowCartModal(false);
     setShowOrderHistoryModal(true);
   };
@@ -673,22 +743,6 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
         </div>
       )}
 
-      {/* Current Order Status */}
-      {orderStatus && (
-        <div
-          style={{
-            padding: '10px',
-            margin: '10px auto',
-            maxWidth: '600px',
-            textAlign: 'center',
-            backgroundColor: '#f5f5f5',
-            borderRadius: '5px'
-          }}
-        >
-          Current Order Status: <b>{orderStatus}</b>
-        </div>
-      )}
-
       <main>
         <div id="menu">
           {categories.map((category) => (
@@ -707,7 +761,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
                       <MenuItem
                         key={item._id}
                         dish={{
-                          name: item.title,
+                          name: item.name || item.title,
                           description: item.description,
                           price: item.price,
                           _id: item._id
@@ -756,8 +810,16 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
             <li id="cart-total" style={{ marginLeft: '80px', listStyleType: 'none' }}>
               Total - {cart.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
             </li>
-            <button style={{ marginLeft: '80px', marginTop: '10px' }} onClick={placeOrder}>Place Order</button>
+            <button style={{ marginLeft: '80px', marginTop: '10px' }} onClick={initiatePayment}>Proceed to Pay</button>
           </ul>
+          {/* Payment status */}
+          {(() => {
+            const latestOrder = orders && orders.length > 0 ? orders[0] : null;
+            if (latestOrder && latestOrder.status === 'paid') {
+              return <div style={{ color: 'green', textAlign: 'center', marginTop: 20, fontWeight: 'bold' }}>Payment Completed</div>;
+            }
+            return null;
+          })()}
         </div>
       </div>
 

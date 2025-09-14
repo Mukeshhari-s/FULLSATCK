@@ -5,8 +5,10 @@ import Signup from './components/Signup.jsx';
 import CustomerDashboard from './components/CustomerDashboard.jsx';
 import ChefDashboard from './components/ChefDashboard.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
+import GuestDashboard from './components/GuestDashboard.jsx';
 import './app.css'; // Changed from './App.css'
 import VoiceButton from './components/VoiceButton.jsx';
+import Pay from './Pay.jsx';
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -78,6 +80,8 @@ const App = () => {
           path="/admin"
           element={user && user.role === 'admin' ? <AdminDashboard onLogout={handleLogout} /> : <Navigate to="/login" />}
         />
+                <Route path="/pay" element={<Pay />} />
+        <Route path="/guest" element={<GuestDashboard />} />
         <Route path="/" element={
           user ? 
             (user.role === 'customer' ? <Navigate to="/customer" /> :

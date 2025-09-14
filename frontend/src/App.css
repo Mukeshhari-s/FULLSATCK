@@ -172,17 +172,16 @@ body.login-page {
 }
 
 .login-container a {
-  display: block;
-  margin-top: 20px;
-  color: var(--login-primary-blue);
+  display: inline-block;
+  color: #4CAF50;
   text-decoration: none;
-  font-size: 0.9rem;
-  transition: color 0.3s ease;
+  font-weight: 500;
+  transition: all 0.3s ease;
 }
 
 .login-container a:hover {
+  color: #45a049;
   text-decoration: underline;
-  color: var(--login-primary-blue);
 }
 
 /* =========================================================================

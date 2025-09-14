@@ -12,9 +12,17 @@ app.use(express.json());
 
 // Load routes
 const authRoutes = require('./routes/auth');
+const paymentRoutes = require('./routes/payment');
+const reservationRoutes = require('./routes/reservations');
+const menuRoutes = require('./routes/menu');
+const orderRoutes = require('./routes/orderRoutes');
 
 // Use routes
 app.use('/api/auth', authRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/menu', menuRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -28,68 +36,11 @@ mongoose.connect('mongodb://localhost:27017/restaurant-app', {
 }).then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// User Schema
-const userSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phoneNumber: { type: String, required: true },
-  role: { type: String, required: true, enum: ['customer', 'chef', 'admin'], default: 'customer' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-// Menu Category Schema
-const categorySchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  filter: { type: String, required: true, unique: true },
-  dishesPerCategory: { type: Number, default: 10 },
-  description: { type: String, default: '' }
-});
-
-// Menu Item Schema
-const menuItemSchema = new mongoose.Schema({
-  categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
-  title: { type: String, required: true },
-  price: { type: Number, required: true },
-  description: { type: String, required: true },
-  image: { type: String, required: true },
-  isActive: { type: Boolean, default: true }
-});
-
-// Order Schema
-const orderSchema = new mongoose.Schema({
-  tableNumber: { type: Number, required: true },
-  items: [{
-    title: { type: String, required: true },
-    price: { type: Number, required: true },
-    note: { type: String, default: '' },
-    menuItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' }
-  }],
-  status: { 
-    type: String, 
-    enum: ['placed', 'accepted', 'preparing', 'ready', 'completed', 'cancelled'],
-    default: 'placed'
-  },
-  chefId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  totalAmount: { type: Number, required: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
-// User Interaction Schema (for tracking user behavior)
-const userInteractionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  tableNumber: { type: Number },
-  action: { type: String, enum: ['view_menu', 'add_to_cart', 'add_to_wishlist', 'place_order', 'view_order_history'] },
-  itemId: { type: mongoose.Schema.Types.ObjectId, ref: 'MenuItem' },
-  timestamp: { type: Date, default: Date.now }
-});
-
+// Load models
+require('./models/Category');
+require('./models/MenuItem');
 const User = require('./models/User');
-const Category = mongoose.model('Category', categorySchema);
-const MenuItem = mongoose.model('MenuItem', menuItemSchema);
-const Order = mongoose.model('Order', orderSchema);
-const UserInteraction = mongoose.model('UserInteraction', userInteractionSchema);
+const Order = require('./models/Order');
 
 // Auth endpoints
 app.post('/api/auth/signup', async (req, res) => {
@@ -275,6 +226,9 @@ app.post('/api/interactions', async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
+// Make io available to routes
+app.set('io', io);
+
 // Socket.IO connection
 io.on('connection', (socket) => {
   console.log('Client connected');
@@ -283,6 +237,12 @@ io.on('connection', (socket) => {
   Order.find().populate('chefId', 'email').sort('-createdAt')
     .then(orders => socket.emit('orders', orders))
     .catch(err => console.error('Error fetching orders:', err));
+
+  // Send current reservations to new client
+  const TableReservation = require('./models/TableReservation');
+  TableReservation.find().sort('reservationDate reservationTime')
+    .then(reservations => socket.emit('reservations', reservations))
+    .catch(err => console.error('Error fetching reservations:', err));
 
   // Customer places an order
   socket.on('placeOrder', async (orderData) => {
@@ -346,4 +306,4 @@ io.on('connection', (socket) => {
 });
 
 const PORT = 5000;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
