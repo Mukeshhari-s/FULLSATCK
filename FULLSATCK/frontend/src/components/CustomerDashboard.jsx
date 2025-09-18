@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import api from '../utils/api';
 import MenuItem from './MenuItem';
 import fetchDishImage from '../utils/unsplash';
+import QRCode from 'react-qr-code';
 
 const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   // Toggle this to enable/disable payment requirement
@@ -42,6 +43,12 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     comment: ''
   });
   const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Payment-related state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [transactionCompleted, setTransactionCompleted] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState('');
 
   // Define roman numerals array at the top of the component
   const romanNumerals = ['i)', 'ii)', 'iii)', 'iv)', 'v)', 'vi)', 'vii)', 'viii)', 'ix)', 'x)'];
@@ -195,9 +202,42 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     return cart.reduce((total, item) => total + item.price, 0);
   };
 
-  const initiatePayment = async () => {
-    alert('Payment is currently disabled. You can place orders without payment.');
-    placeOrder();
+  // New payment functions
+  const initiatePayment = () => {
+    if (!tableNumber || cart.length === 0) {
+      alert('Please select a table and add items to your cart before proceeding to payment.');
+      return;
+    }
+    
+    // Generate QR code data (you can provide your custom QR data here)
+    const paymentData = {
+      tableNumber,
+      totalAmount: calculateTotal(),
+      timestamp: new Date().toISOString(),
+      orderId: `ORDER-${tableNumber}-${Date.now()}`
+    };
+    
+    // You can replace this with your custom QR code data
+    const qrData = `upi://pay?pa=merchant@upi&pn=Restaurant&am=${calculateTotal()}&cu=INR&tn=Table${tableNumber}Order`;
+    setQrCodeData(qrData);
+    setShowPaymentModal(true);
+    setTransactionCompleted(false);
+  };
+
+  const simulateTransaction = () => {
+    setPaymentProcessing(true);
+    
+    // Simulate transaction processing
+    setTimeout(() => {
+      setPaymentProcessing(false);
+      setTransactionCompleted(true);
+      
+      // After successful transaction, proceed to place order
+      setTimeout(() => {
+        setShowPaymentModal(false);
+        placeOrder();
+      }, 2000);
+    }, 3000); // 3 seconds simulation
   };
 
   const placeOrder = () => {
@@ -861,7 +901,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
             <li id="cart-total" style={{ marginLeft: '80px', listStyleType: 'none' }}>
               Total - {cart.reduce((sum, item) => sum + item.price, 0).toFixed(2)}
             </li>
-            <button style={{ marginLeft: '80px', marginTop: '10px' }} onClick={placeOrder}>Proceed to Place Order</button>
+            <button style={{ marginLeft: '80px', marginTop: '10px' }} onClick={initiatePayment}>Proceed Payment</button>
           </ul>
           {/* Payment status */}
           {(() => {
@@ -1006,6 +1046,86 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {showPaymentModal && (
+        <div className="modal" style={{ display: 'block' }}>
+          <div className="modal-content" style={{ textAlign: 'center', maxWidth: '500px' }}>
+            <span className="close-btn" onClick={() => setShowPaymentModal(false)}>×</span>
+            <h2>Payment Process</h2>
+            
+            {!transactionCompleted && !paymentProcessing && (
+              <div>
+                <p><strong>Total Amount: ${calculateTotal().toFixed(2)}</strong></p>
+                <p>Scan the QR code below to complete your payment:</p>
+                
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  margin: '20px 0',
+                  padding: '20px',
+                  backgroundColor: '#f9f9f9',
+                  borderRadius: '10px'
+                }}>
+                  <QRCode 
+                    value={qrCodeData} 
+                    size={200} 
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
+                </div>
+                
+                <p style={{ fontSize: '14px', color: '#666', marginBottom: '20px' }}>
+                  After scanning the QR code and completing the payment, click the button below.
+                </p>
+                
+                <button 
+                  onClick={simulateTransaction}
+                  style={{
+                    backgroundColor: '#4CAF50',
+                    color: 'white',
+                    padding: '12px 30px',
+                    border: 'none',
+                    borderRadius: '5px',
+                    fontSize: '16px',
+                    cursor: 'pointer',
+                    marginTop: '10px'
+                  }}
+                >
+                  Complete Payment
+                </button>
+              </div>
+            )}
+
+            {paymentProcessing && (
+              <div>
+                <div style={{ margin: '30px 0' }}>
+                  <div style={{
+                    border: '4px solid #f3f3f3',
+                    borderTop: '4px solid #3498db',
+                    borderRadius: '50%',
+                    width: '40px',
+                    height: '40px',
+                    animation: 'spin 2s linear infinite',
+                    margin: '0 auto'
+                  }}></div>
+                  <p style={{ marginTop: '20px', fontSize: '18px' }}>Processing Payment...</p>
+                  <p style={{ color: '#666' }}>Please wait while we verify your transaction.</p>
+                </div>
+              </div>
+            )}
+
+            {transactionCompleted && (
+              <div>
+                <div style={{ color: '#4CAF50', fontSize: '50px', margin: '20px 0' }}>✓</div>
+                <h3 style={{ color: '#4CAF50' }}>Payment Successful!</h3>
+                <p>Your transaction has been completed successfully.</p>
+                <p>Placing your order now...</p>
+              </div>
+            )}
           </div>
         </div>
       )}
