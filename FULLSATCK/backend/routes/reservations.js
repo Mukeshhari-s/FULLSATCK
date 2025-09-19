@@ -97,8 +97,8 @@ router.get('/check-availability', async (req, res) => {
             reservationDate: { $gte: dayStart, $lt: dayEnd },
             status: { $in: ['pending', 'confirmed'] }
         });
-
-        const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
+        // Double-booking prevention: if any reservation exists for the day, block
+        const reservationConflict = sameDayReservations.length > 0;
 
         // Get active orders for the table (not completed/cancelled)
         const activeOrders = await Order.find({
@@ -107,7 +107,6 @@ router.get('/check-availability', async (req, res) => {
         }).select('createdAt status tableNumber');
 
         const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
-
         const isAvailable = !(reservationConflict || orderConflict);
         res.json({ isAvailable, reservationConflict, orderConflict });
     } catch (err) {
@@ -140,19 +139,29 @@ router.get('/slots', async (req, res) => {
             status: { $nin: ['completed', 'cancelled'] }
         }).select('createdAt status tableNumber');
 
-        // Generate slots from 09:00 to 22:00 (14 slots like UI)
-        const slots = Array.from({ length: 14 }, (_, i) => 9 + i).map(hour => {
-            const timeStr = `${hour}:00`;
-            const requestedDateTime = combineDateAndTime(reservationDate, timeStr);
-            const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
-            const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
-            return {
-                time: timeStr,
-                isAvailable: !(reservationConflict || orderConflict),
-                reservationConflict,
-                orderConflict
-            };
-        });
+        // If already reserved for the day, block all slots
+        let slots;
+        if (sameDayReservations.length > 0) {
+            slots = Array.from({ length: 14 }, (_, i) => 9 + i).map(hour => ({
+                time: `${hour}:00`,
+                isAvailable: false,
+                reservationConflict: true,
+                orderConflict: false
+            }));
+        } else {
+            // Otherwise allow slots unless blocked by active order occupancy
+            slots = Array.from({ length: 14 }, (_, i) => 9 + i).map(hour => {
+                const timeStr = `${hour}:00`;
+                const requestedDateTime = combineDateAndTime(reservationDate, timeStr);
+                const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
+                return {
+                    time: timeStr,
+                    isAvailable: !orderConflict,
+                    reservationConflict: false,
+                    orderConflict
+                };
+            });
+        }
 
         res.json({ date, tableNumber: parseInt(tableNumber), slots });
     } catch (err) {
@@ -178,7 +187,8 @@ router.post('/', async (req, res) => {
             reservationDate: { $gte: dayStart, $lt: dayEnd },
             status: { $in: ['pending', 'confirmed'] }
         });
-        const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
+        // Block if any reservation exists for the same table on the selected date
+        const reservationConflict = sameDayReservations.length > 0;
 
         // Check active order conflicts
         const activeOrders = await Order.find({
@@ -189,9 +199,9 @@ router.post('/', async (req, res) => {
 
         if (reservationConflict || orderConflict) {
             const reason = reservationConflict && orderConflict
-                ? 'Table blocked by another reservation and active seating'
+                ? 'Table already reserved for today and currently occupied'
                 : reservationConflict
-                    ? 'Table blocked by another reservation (within 30 minutes)'
+                    ? 'This table is already reserved for the selected date'
                     : 'Table currently occupied (active order)';
             return res.status(400).json({ message: reason, reservationConflict, orderConflict });
         }

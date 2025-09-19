@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { io } from 'socket.io-client';
-import axios from 'axios';
+import api from '../utils/api';
 
 const ChefDashboard = ({ onLogout }) => {
   const [orders, setOrders] = useState([]);
@@ -10,7 +10,7 @@ const ChefDashboard = ({ onLogout }) => {
   // Fetch orders from API
   const fetchOrders = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/orders');
+      const response = await api.get('/orders');
       setOrders(response.data);
       setLoading(false);
     } catch (err) {
@@ -24,18 +24,26 @@ const ChefDashboard = ({ onLogout }) => {
   }, []);
 
   useEffect(() => {
-    socketRef.current = io('http://localhost:5000');
+    // derive socket origin from API base
+    let socketOrigin = 'http://localhost:5000';
+    try {
+      const apiBase = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000/api';
+      const url = new URL(apiBase);
+      socketOrigin = `${url.protocol}//${url.host}`;
+    } catch {}
+
+    socketRef.current = io(socketOrigin, { transports: ['websocket', 'polling'] });
     socketRef.current.on('orders', (allOrders) => {
       setOrders(allOrders);
     });
-    
-    return () => socketRef.current.disconnect();
+
+    return () => socketRef.current && socketRef.current.disconnect();
   }, []);
 
   const updateOrderStatus = async (orderId, status) => {
     try {
       // Update via HTTP endpoint
-      await axios.put(`http://localhost:5000/api/orders/${orderId}/status`, { status });
+      await api.put(`/orders/${orderId}/status`, { status });
       
       // Find the order to get the table number
       const order = orders.find(o => o._id === orderId);
@@ -64,7 +72,7 @@ const ChefDashboard = ({ onLogout }) => {
       }
 
       // Emit via socket for real-time updates with the notification message
-      socketRef.current.emit('updateOrderStatus', {
+      socketRef.current && socketRef.current.emit('updateOrderStatus', {
         orderId,
         status,
         tableNumber: order.tableNumber,

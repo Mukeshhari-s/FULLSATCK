@@ -98,52 +98,54 @@ const MenuItem = ({ dish, onAddToWishlist, onAddToCart, onReview }) => {
           </div>
         )}
         <div className="button-container">
-          <button 
-            type="button" 
-            className="add-to-wishlist" 
-            onClick={onAddToWishlist}
-          >
-            <i className="fas fa-heart">❤️</i>
-          </button>
-          <button 
-            type="button" 
-            className="add-to-cart" 
-            onClick={onAddToCart}
-          >
-            <i className="fas fa-shopping-cart">🛒</i>
-          </button>
-          {onReview ? (
+          {/* Row 1: Cart & Wishlist (above) */}
+          <div className="icon-buttons">
             <button 
               type="button" 
-              className="review-dish" 
-              onClick={onReview}
-              style={{
-                backgroundColor: '#ffc107',
-                color: '#212529',
-                border: '1px solid #ffc107',
-                marginLeft: '5px'
-              }}
+              className="icon-button add-to-cart" 
+              onClick={onAddToCart}
+              aria-label="Add to cart"
+              title="Add to cart"
             >
-              ⭐ Review
+              <i className="fas fa-shopping-cart">🛒</i>
             </button>
-          ) : (
             <button 
               type="button" 
-              className="review-disabled" 
-              disabled
-              title="Order this dish first to leave a review"
-              style={{
-                backgroundColor: '#e9ecef',
-                color: '#6c757d',
-                border: '1px solid #dee2e6',
-                marginLeft: '5px',
-                cursor: 'not-allowed',
-                opacity: 0.6
-              }}
+              className="icon-button add-to-wishlist" 
+              onClick={onAddToWishlist}
+              aria-label="Add to wishlist"
+              title="Add to wishlist"
             >
-              ⭐ Review
+              <i className="fas fa-heart">❤️</i>
             </button>
-          )}
+          </div>
+
+          {/* Row 2: Review (below) */}
+          <div className="review-row">
+            {onReview ? (
+              <button 
+                type="button" 
+                className="review-button"
+                onClick={onReview}
+                aria-label="Write a review"
+                title="Write a review"
+              >
+                <span className="review-star">★</span>
+                <span>Write Review</span>
+              </button>
+            ) : (
+              <button 
+                type="button" 
+                className="review-button disabled" 
+                disabled
+                aria-label="Order this dish first to review"
+                title="Order this dish first to leave a review"
+              >
+                <span className="review-star">★</span>
+                <span>Write Review</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
