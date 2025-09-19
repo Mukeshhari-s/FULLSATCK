@@ -53,9 +53,55 @@ const MenuItem = ({ dish, onAddToWishlist, onAddToCart, onReview }) => {
         )}
       </div>
       <div className="menu-item-details">
-        <h3>{dish.name}</h3>
+        <div className="dish-title-row">
+          <span className="dish-name">{dish.name}</span>
+          <span className="dish-hyphen">-</span>
+          <span className="price">₹{dish.price}</span>
+        </div>
         <p>{dish.description}</p>
-        <span className="price">₹{dish.price}</span>
+        <div className="menu-item-actions-row">
+          <div className="button-container">
+            <button 
+              type="button" 
+              className="icon-button add-to-cart" 
+              onClick={onAddToCart}
+              aria-label="Add to cart"
+              title="Add to cart"
+            >
+              <i className="fas fa-shopping-cart">🛒</i>
+            </button>
+            <button 
+              type="button" 
+              className="icon-button add-to-wishlist" 
+              onClick={onAddToWishlist}
+              aria-label="Add to wishlist"
+              title="Add to wishlist"
+            >
+              <i className="fas fa-heart">❤️</i>
+            </button>
+            {onReview ? (
+              <button 
+                type="button" 
+                className="icon-button review-icon-button"
+                onClick={onReview}
+                aria-label="Write a review"
+                title="Write a review"
+              >
+                <span role="img" aria-label="feedback" style={{fontSize: '22px'}}>📝</span>
+              </button>
+            ) : (
+              <button 
+                type="button" 
+                className="icon-button review-icon-button disabled" 
+                disabled
+                aria-label="Order this dish first to review"
+                title="Order this dish first to leave a review"
+              >
+                <span role="img" aria-label="feedback" style={{fontSize: '22px'}}>📝</span>
+              </button>
+            )}
+          </div>
+        </div>
         {avgRating !== null && (
           <div className="dish-rating">
             <span>⭐ {avgRating.toFixed(1)} / 5</span> ({reviews.length} reviews)
@@ -97,56 +143,7 @@ const MenuItem = ({ dish, onAddToWishlist, onAddToCart, onReview }) => {
             )}
           </div>
         )}
-        <div className="button-container">
-          {/* Row 1: Cart & Wishlist (above) */}
-          <div className="icon-buttons">
-            <button 
-              type="button" 
-              className="icon-button add-to-cart" 
-              onClick={onAddToCart}
-              aria-label="Add to cart"
-              title="Add to cart"
-            >
-              <i className="fas fa-shopping-cart">🛒</i>
-            </button>
-            <button 
-              type="button" 
-              className="icon-button add-to-wishlist" 
-              onClick={onAddToWishlist}
-              aria-label="Add to wishlist"
-              title="Add to wishlist"
-            >
-              <i className="fas fa-heart">❤️</i>
-            </button>
-          </div>
-
-          {/* Row 2: Review (below) */}
-          <div className="review-row">
-            {onReview ? (
-              <button 
-                type="button" 
-                className="review-button"
-                onClick={onReview}
-                aria-label="Write a review"
-                title="Write a review"
-              >
-                <span className="review-star">★</span>
-                <span>Write Review</span>
-              </button>
-            ) : (
-              <button 
-                type="button" 
-                className="review-button disabled" 
-                disabled
-                aria-label="Order this dish first to review"
-                title="Order this dish first to leave a review"
-              >
-                <span className="review-star">★</span>
-                <span>Write Review</span>
-              </button>
-            )}
-          </div>
-        </div>
+        {/* ...existing code... */}
       </div>
     </div>
   );

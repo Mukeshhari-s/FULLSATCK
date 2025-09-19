@@ -23,8 +23,8 @@ code {
 
 body {
   font-family: 'Poppins', sans-serif;
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  color: var(--text-dark);
+  background: #343a40;
+  color: var(--gold-dark);
   line-height: 1.6;
   overflow-x: hidden;
   padding-top: 80px;
@@ -56,7 +56,7 @@ body {
 
 /* Header Styles */
 .header-container {
-  background: rgba(255, 255, 255, 0.95);
+  background: #343a40;
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(212, 175, 55, 0.2);
   padding: 15px 30px;
@@ -85,7 +85,7 @@ body {
   display: flex;
   align-items: center;
   text-decoration: none;
-  color: var(--text-dark);
+  color: var(--gold-dark);
   font-family: 'Playfair Display', serif;
   font-size: 24px;
   font-weight: 600;
@@ -168,11 +168,12 @@ body {
 #searchBar {
   width: 100%;
   max-width: 500px;
+  color: var(--gold-dark);
   padding: 12px 20px;
   border: 2px solid transparent;
   border-radius: 25px;
   font-size: 16px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--white-alpha-10);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-light);
   transition: var(--transition);
@@ -280,8 +281,8 @@ body {
 }
 
 .filter-btn {
-  background: var(--gradient-secondary);
-  color: white;
+  background: var(--white-alpha-10);
+  color: #4CAF50;
   border: none;
   padding: 12px 24px;
   cursor: pointer;
@@ -351,7 +352,7 @@ body {
   align-items: center;
   gap: 8px;
   margin-left: 15px;
-  background: rgba(255, 255, 255, 0.9);
+  background: var(--text-dark);
   backdrop-filter: blur(10px);
   padding: 8px 15px;
   border-radius: 20px;
@@ -372,7 +373,7 @@ body {
   border: 2px solid transparent;
   border-radius: 15px;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--white-alpha-10);
   color: var(--text-dark);
   transition: var(--transition);
   text-align: center;
@@ -447,7 +448,7 @@ body {
 /* Menu Items Grid */
 .menu-items {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 30px;
   padding: 20px 0;
 }
@@ -575,6 +576,7 @@ button {
   position: relative;
   overflow: hidden;
   font-size: 14px;
+  background: var(--white-alpha-10) !important;
 }
 
 button::before {
@@ -584,7 +586,7 @@ button::before {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-alpha-10);
   transition: var(--transition);
 }
 

@@ -143,7 +143,7 @@ const AnalyticsCharts = ({ orders = [] }) => {
   const topCustomersData = todayAnalytics.topCustomers?.map(c => ({ table: `Table ${c.tableNumber}`, spent: c.totalSpent, orders: c.orders })) || [];
 
   return (
-    <section style={{ marginTop: 30, background: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #eee', padding: 24 }}>
+    <section style={{ marginTop: 30, borderRadius: 8, boxShadow: '0 2px 8px #eee', padding: 24 }}>
       <h2>Restaurant Analytics Dashboard</h2>
       
       {/* Summary Cards */}

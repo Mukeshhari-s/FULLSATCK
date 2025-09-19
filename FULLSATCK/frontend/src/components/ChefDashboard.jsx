@@ -150,7 +150,7 @@ const ChefDashboard = ({ onLogout }) => {
           {orders.filter(o => o.status === 'completed').length === 0 && <p>No completed orders.</p>}
           <ul style={{ listStyleType: 'none', padding: 0 }}>
             {orders.filter(o => o.status === 'completed').map(order => (
-              <li key={order._id} style={{ border: '1px solid #ccc', borderRadius: '8px', margin: '10px 0', padding: '15px', backgroundColor: '#f9f9f9' }}>
+              <li key={order._id} style={{ border: '1px solid #ccc', borderRadius: '8px', margin: '10px 0', padding: '15px' }}>
                 <b>Table:</b> {order.tableNumber}<br />
                 <b>Status:</b> {order.status}<br />
                 <b>Total Amount:</b> {order.totalAmount?.toFixed(2) || '0.00'}<br />
@@ -167,14 +167,13 @@ const ChefDashboard = ({ onLogout }) => {
         </div>
 
         {/* Quick Reviews Overview */}
-        <div style={{ marginTop: '30px', backgroundColor: '#f8f9fa', padding: '20px', borderRadius: '8px' }}>
+        <div style={{ marginTop: '30px', padding: '20px', borderRadius: '8px' }}>
           <h3>Customer Feedback Summary</h3>
           <p style={{ color: '#6c757d', marginBottom: '15px' }}>
             See detailed reviews and ratings in the Admin Dashboard
           </p>
           <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
             <div style={{ 
-              backgroundColor: '#fff', 
               padding: '15px', 
               borderRadius: '8px', 
               border: '1px solid #dee2e6',
@@ -185,8 +184,7 @@ const ChefDashboard = ({ onLogout }) => {
                 Encourage customers to leave reviews after completing their orders!
               </p>
             </div>
-            <div style={{ 
-              backgroundColor: '#fff', 
+            <div style={{  
               padding: '15px', 
               borderRadius: '8px', 
               border: '1px solid #dee2e6',

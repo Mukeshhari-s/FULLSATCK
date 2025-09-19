@@ -532,8 +532,8 @@ const AdminDashboard = ({ onLogout }) => {
                   borderRadius: 8, 
                   margin: '10px 0', 
                   padding: 15, 
-                  backgroundColor: reservation.status === 'cancelled' ? '#ffe6e6' : '#f9f9f9',
                   position: 'relative',
+
                   opacity: reservation.status === 'cancelled' ? 0.7 : 1
                 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -556,7 +556,7 @@ const AdminDashboard = ({ onLogout }) => {
                     </div>
                   </div>
                   {reservation.specialRequests && (
-                    <div style={{ marginTop: '10px', padding: '8px', backgroundColor: '#fff', borderRadius: '4px' }}>
+                    <div style={{ marginTop: '10px', padding: '8px', borderRadius: '4px' }}>
                       <b>Special Requests:</b> {reservation.specialRequests}
                     </div>
                   )}
@@ -647,7 +647,7 @@ const AdminDashboard = ({ onLogout }) => {
           <ul style={{ listStyleType: 'none', padding: 0 }}>
             {filteredChefOrders.length === 0 && <li>No orders accepted by chefs.</li>}
             {paginatedChefOrders.map(order => (
-              <li key={order._id} style={{ border: '1px solid #ccc', borderRadius: 8, margin: '10px 0', padding: 15, backgroundColor: '#f9f9f9' }}>
+              <li key={order._id} style={{ border: '1px solid #ccc', borderRadius: 8, margin: '10px 0', padding: 15  }}>
                 <b>Customer:</b> Table {order.tableNumber} <br />
                 <b>Status:</b> {order.status} <br />
                 <b>Chef:</b> {order.chefId?.email || 'N/A'} <br />
@@ -676,7 +676,7 @@ const AdminDashboard = ({ onLogout }) => {
   <AnalyticsCharts orders={orders} />
 
         {/* Reviews Section */}
-        <section style={{ marginTop: 30, backgroundColor: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #eee', padding: 24 }}>
+        <section style={{ marginTop: 30, borderRadius: 8, boxShadow: '0 2px 8px #eee', padding: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
             <h3>Customer Reviews & Top Rated Dishes</h3>
             <button 
@@ -764,7 +764,7 @@ const AdminDashboard = ({ onLogout }) => {
 
           {/* New Category Form */}
           {showNewCategoryForm && (
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 15, margin: '10px 0', backgroundColor: '#f9f9f9' }}>
+            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 15, margin: '10px 0' }}>
               <h4>Add New Category</h4>
               <form onSubmit={handleNewCategorySubmit}>
                 <input
@@ -807,19 +807,20 @@ const AdminDashboard = ({ onLogout }) => {
           )}
 
           {/* Category Search Bar */}
-          <input
-            type="text"
-            placeholder="Search categories..."
-            value={categorySearch}
-            onChange={e => setCategorySearch(e.target.value)}
-            style={{ marginBottom: 8, width: '100%' }}
-          />
+          <div className="admin-search-bar">
+            <input
+              type="text"
+              placeholder="Search categories..."
+              value={categorySearch}
+              onChange={e => setCategorySearch(e.target.value)}
+            />
+          </div>
 
           {/* Collapsible Category List */}
           <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #ccc', borderRadius: 4 }}>
             {categories.filter(cat => cat.name.toLowerCase().includes(categorySearch.toLowerCase())).map(cat => (
               <div key={cat._id} style={{ marginBottom: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', background: '#f5f5f5', padding: 8, borderRadius: 4 }} onClick={() => toggleCategory(cat._id)}>
+                <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: 8, borderRadius: 4 }} onClick={() => toggleCategory(cat._id)}>
                   <span style={{ fontWeight: 'bold', flex: 1 }}>{cat.name}</span>
                   <span>{openCategoryIds.includes(cat._id) ? '▲' : '▼'}</span>
                 </div>
@@ -892,7 +893,7 @@ const AdminDashboard = ({ onLogout }) => {
 
           {/* New Dish Form */}
           {showNewDishForm && (
-            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 15, margin: '10px 0', backgroundColor: '#f9f9f9' }}>
+            <div style={{ border: '1px solid #ddd', borderRadius: 8, padding: 15, margin: '10px 0' }}>
               <h4>Add New Menu Item</h4>
               <form onSubmit={handleNewDishSubmit}>
                 <select
@@ -960,13 +961,14 @@ const AdminDashboard = ({ onLogout }) => {
           )}
 
           {/* Dish Search Bar */}
-          <input
-            type="text"
-            placeholder="Search dishes..."
-            value={dishSearch}
-            onChange={e => setDishSearch(e.target.value)}
-            style={{ marginBottom: 8, width: '100%' }}
-          />
+          <div className="admin-search-bar">
+            <input
+              type="text"
+              placeholder="Search dishes..."
+              value={dishSearch}
+              onChange={e => setDishSearch(e.target.value)}
+            />
+          </div>
 
           {/* Paginated Dish List */}
           <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #ccc', borderRadius: 4 }}>
@@ -1015,7 +1017,7 @@ const AdminDashboard = ({ onLogout }) => {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center' }}>
-                    <div style={{ width: 60, height: 60, marginRight: 10, overflow: 'hidden', borderRadius: '4px', backgroundColor: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 60, height: 60, marginRight: 10, overflow: 'hidden', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {dishImages[dish._id] ? (
                         <img 
                           src={dishImages[dish._id]} 

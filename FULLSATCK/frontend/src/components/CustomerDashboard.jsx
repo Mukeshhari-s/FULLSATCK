@@ -486,7 +486,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           overflowX: 'auto',
           justifyContent: 'flex-start',
           padding: '15px 30px',
-          background: 'rgba(255, 255, 255, 0.95)',
+          background: 'var(--text-dark)',
           backdropFilter: 'blur(10px)',
           borderBottom: '1px solid rgba(212, 175, 55, 0.2)',
           position: 'fixed',
@@ -818,13 +818,23 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
             <form onSubmit={handleReviewSubmit}>
               <div style={{ marginBottom: '15px' }}>
                 <label htmlFor="rating" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Rating (1-5 stars):</label>
-                <select id="rating" value={reviewForm.rating} onChange={e => handleReviewFormChange('rating', parseInt(e.target.value))} style={{ width: '100%', padding: '8px', fontSize: '16px' }}>
-                  <option value={1}>⭐ (1 star - Poor)</option>
-                  <option value={2}>⭐⭐ (2 stars - Fair)</option>
-                  <option value={3}>⭐⭐⭐ (3 stars - Good)</option>
-                  <option value={4}>⭐⭐⭐⭐ (4 stars - Very Good)</option>
-                  <option value={5}>⭐⭐⭐⭐⭐ (5 stars - Excellent)</option>
-                </select>
+                <div style={{ display: 'flex', gap: '6px', fontSize: '2rem', marginBottom: '8px' }}>
+                  {[1,2,3,4,5].map(star => (
+                    <span
+                      key={star}
+                      style={{
+                        cursor: 'pointer',
+                        color: star <= reviewForm.rating ? '#FFD700' : '#ccc',
+                        transition: 'color 0.2s'
+                      }}
+                      onClick={() => handleReviewFormChange('rating', star)}
+                      onMouseEnter={() => setReviewForm(f => ({ ...f, hoverRating: star }))}
+                      onMouseLeave={() => setReviewForm(f => { const { hoverRating, ...rest } = f; return rest; })}
+                    >
+                      ★
+                    </span>
+                  ))}
+                </div>
               </div>
               <div style={{ marginBottom: '15px' }}>
                 <label htmlFor="comment" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Your Review:</label>

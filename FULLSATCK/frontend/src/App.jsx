@@ -6,14 +6,29 @@ import CustomerDashboard from './components/CustomerDashboard.jsx';
 import ChefDashboard from './components/ChefDashboard.jsx';
 import AdminDashboard from './components/AdminDashboard.jsx';
 import GuestDashboard from './components/GuestDashboard.jsx';
-import './app.css'; // Changed from './App.css'
+import './App.css';
+import './styles/theme.css';
+import './styles/MenuContainer.css';
 import VoiceButton from './components/VoiceButton.jsx';
 import Pay from './Pay.jsx';
+import TsparticlesBG from './components/TsparticlesBG.jsx';
 
 const App = () => {
   const [user, setUser] = useState(null);
   const [tableNumber, setTableNumber] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Set body class based on user role for theme
+  useEffect(() => {
+    if (user && user.role) {
+      document.body.classList.remove('customer-theme', 'chef-theme', 'admin-theme');
+      if (user.role === 'customer') document.body.classList.add('customer-theme');
+      else if (user.role === 'chef') document.body.classList.add('chef-theme');
+      else if (user.role === 'admin') document.body.classList.add('admin-theme');
+    } else {
+      document.body.classList.remove('customer-theme', 'chef-theme', 'admin-theme');
+    }
+  }, [user]);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
@@ -55,6 +70,8 @@ const App = () => {
 
   return (
     <>
+        <TsparticlesBG />
+                <div className="content-wrapper">
       <Routes>
         <Route path="/login" element={<Login onLogin={handleLogin} />} />
         <Route path="/signup" element={<Signup />} />
@@ -90,7 +107,7 @@ const App = () => {
           : <Navigate to="/login" />
         } />
       </Routes>
-      <VoiceButton onClick={() => alert('Voice search coming soon!')} />
+      <VoiceButton onClick={() => alert('Voice search coming soon!')} /></div>
     </>
   );
 };
