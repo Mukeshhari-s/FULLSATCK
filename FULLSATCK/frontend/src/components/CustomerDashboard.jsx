@@ -240,7 +240,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     }, 3000); // 3 seconds simulation
   };
 
-  const placeOrder = () => {
+  const placeOrder = async () => {
     if (!tableNumber || cart.length === 0) {
       alert('Please select a table and add items to your cart before placing an order.');
       return;
@@ -266,7 +266,13 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
         })
         .catch(error => {
           console.error('Error placing order:', error);
-          alert('Failed to place order. Please try again.');
+          if (error.response?.status === 403) {
+            alert('Please reserve a table before placing an order. Open Guest page to reserve.');
+            // Optionally, open a new tab to guest reservation
+            window.open('/guest?tab=reservation', '_blank');
+          } else {
+            alert('Failed to place order. Please try again.');
+          }
         });
     } catch (error) {
       console.error('Error placing order:', error);

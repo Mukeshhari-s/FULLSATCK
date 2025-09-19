@@ -1,6 +1,44 @@
 const express = require('express');
 const router = express.Router();
 const TableReservation = require('../models/TableReservation');
+const Order = require('../models/Order');
+
+// Helper: parse "HH:mm" into a Date combined with a base date
+function combineDateAndTime(dateInput, timeStr) {
+    const date = new Date(dateInput);
+    const [hStr, mStr] = (timeStr || '00:00').split(':');
+    const h = parseInt(hStr, 10) || 0;
+    const m = parseInt(mStr, 10) || 0;
+    const combined = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0, 0);
+    return combined;
+}
+
+// Helper: minutes diff (a - b) in minutes
+function diffInMinutes(a, b) {
+    return (a.getTime() - b.getTime()) / (1000 * 60);
+}
+
+// Helper: determine if requestedDateTime conflicts with existing reservation within buffer
+function hasReservationConflict(existingReservations, requestedDateTime, bufferMinutes = 30) {
+    return existingReservations.some(r => {
+        const rDate = combineDateAndTime(r.reservationDate, r.reservationTime);
+        const minutes = Math.abs(diffInMinutes(rDate, requestedDateTime));
+        return minutes < bufferMinutes; // conflict if within +/- buffer
+    });
+}
+
+// Helper: determine if requested time overlaps with active seating (orders)
+// Assumptions:
+// - A table is occupied from order.createdAt until +90 minutes if not completed/cancelled
+// - We also block new reservations within 30 minutes before seating starts
+function hasActiveOrderConflict(activeOrders, requestedDateTime, preBufferMinutes = 30, seatingDurationMinutes = 90) {
+    return activeOrders.some(o => {
+        const start = new Date(o.createdAt);
+        const preBlockStart = new Date(start.getTime() - preBufferMinutes * 60 * 1000);
+        const end = new Date(start.getTime() + seatingDurationMinutes * 60 * 1000);
+        return requestedDateTime >= preBlockStart && requestedDateTime <= end;
+    });
+}
 
 // Get all reservations
 router.get('/', async (req, res) => {
@@ -47,27 +85,78 @@ router.get('/check-availability', async (req, res) => {
     try {
         const { date, time, tableNumber } = req.query;
         console.log('Checking availability for:', { date, time, tableNumber });
-        
-        // Create date object properly
+
         const reservationDate = new Date(date);
-        console.log('Parsed reservation date:', reservationDate);
-        
-        // Find existing reservations for the same table, date, and time
-        const existingReservation = await TableReservation.findOne({
+        const requestedDateTime = combineDateAndTime(reservationDate, time);
+
+        // Get same-day reservations for the table (pending/confirmed)
+        const dayStart = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate());
+        const dayEnd = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1);
+        const sameDayReservations = await TableReservation.find({
             tableNumber: parseInt(tableNumber),
-            reservationDate: {
-                $gte: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate()),
-                $lt: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1)
-            },
-            reservationTime: time,
+            reservationDate: { $gte: dayStart, $lt: dayEnd },
             status: { $in: ['pending', 'confirmed'] }
         });
 
-        console.log('Existing reservation found:', existingReservation);
-        
-        res.json({ isAvailable: !existingReservation });
+        const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
+
+        // Get active orders for the table (not completed/cancelled)
+        const activeOrders = await Order.find({
+            tableNumber: parseInt(tableNumber),
+            status: { $nin: ['completed', 'cancelled'] }
+        }).select('createdAt status tableNumber');
+
+        const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
+
+        const isAvailable = !(reservationConflict || orderConflict);
+        res.json({ isAvailable, reservationConflict, orderConflict });
     } catch (err) {
         console.error('Error checking availability:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Get slot-by-slot availability for a date and table
+// Query: date=YYYY-MM-DD, tableNumber=number
+router.get('/slots', async (req, res) => {
+    try {
+        const { date, tableNumber } = req.query;
+        if (!date || !tableNumber) {
+            return res.status(400).json({ message: 'date and tableNumber are required' });
+        }
+
+        const reservationDate = new Date(date);
+        const dayStart = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate());
+        const dayEnd = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1);
+
+        // Preload data for efficiency
+        const sameDayReservations = await TableReservation.find({
+            tableNumber: parseInt(tableNumber),
+            reservationDate: { $gte: dayStart, $lt: dayEnd },
+            status: { $in: ['pending', 'confirmed'] }
+        });
+        const activeOrders = await Order.find({
+            tableNumber: parseInt(tableNumber),
+            status: { $nin: ['completed', 'cancelled'] }
+        }).select('createdAt status tableNumber');
+
+        // Generate slots from 09:00 to 22:00 (14 slots like UI)
+        const slots = Array.from({ length: 14 }, (_, i) => 9 + i).map(hour => {
+            const timeStr = `${hour}:00`;
+            const requestedDateTime = combineDateAndTime(reservationDate, timeStr);
+            const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
+            const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
+            return {
+                time: timeStr,
+                isAvailable: !(reservationConflict || orderConflict),
+                reservationConflict,
+                orderConflict
+            };
+        });
+
+        res.json({ date, tableNumber: parseInt(tableNumber), slots });
+    } catch (err) {
+        console.error('Error fetching slots:', err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -79,22 +168,32 @@ router.post('/', async (req, res) => {
         
         // Parse date properly
         const reservationDate = new Date(req.body.reservationDate);
-        
-        // Check if table is already reserved
-        const existingReservation = await TableReservation.findOne({
+        const requestedDateTime = combineDateAndTime(reservationDate, req.body.reservationTime);
+
+        // Check same-day reservation conflicts with 30-min buffer
+        const dayStart = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate());
+        const dayEnd = new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1);
+        const sameDayReservations = await TableReservation.find({
             tableNumber: parseInt(req.body.tableNumber),
-            reservationDate: {
-                $gte: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate()),
-                $lt: new Date(reservationDate.getFullYear(), reservationDate.getMonth(), reservationDate.getDate() + 1)
-            },
-            reservationTime: req.body.reservationTime,
+            reservationDate: { $gte: dayStart, $lt: dayEnd },
             status: { $in: ['pending', 'confirmed'] }
         });
+        const reservationConflict = hasReservationConflict(sameDayReservations, requestedDateTime, 30);
 
-        console.log('Existing reservation check:', existingReservation);
+        // Check active order conflicts
+        const activeOrders = await Order.find({
+            tableNumber: parseInt(req.body.tableNumber),
+            status: { $nin: ['completed', 'cancelled'] }
+        }).select('createdAt status tableNumber');
+        const orderConflict = hasActiveOrderConflict(activeOrders, requestedDateTime, 30, 90);
 
-        if (existingReservation) {
-            return res.status(400).json({ message: 'Table is already reserved for this time' });
+        if (reservationConflict || orderConflict) {
+            const reason = reservationConflict && orderConflict
+                ? 'Table blocked by another reservation and active seating'
+                : reservationConflict
+                    ? 'Table blocked by another reservation (within 30 minutes)'
+                    : 'Table currently occupied (active order)';
+            return res.status(400).json({ message: reason, reservationConflict, orderConflict });
         }
 
         // Create reservation with proper data types
