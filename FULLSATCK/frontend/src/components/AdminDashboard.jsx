@@ -42,6 +42,15 @@ const fetchDishImage = async (dishName) => {
 };
 
 const AdminDashboard = ({ onLogout }) => {
+  // INR currency formatter for consistent display in Admin
+  const formatINR = (value) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(Number(value) || 0);
+
   const [adminData, setAdminData] = useState({});
   const [orders, setOrders] = useState([]);
   const [menu, setMenu] = useState([]);
@@ -609,12 +618,12 @@ const AdminDashboard = ({ onLogout }) => {
                   <b>Customer:</b> Table {order.tableNumber} <br />
                   <b>Status:</b> {order.status} <br />
                   <b>Chef:</b> {order.chefId?.email || 'N/A'} <br />
-                  <b>Total Amount:</b> ${order.totalAmount?.toFixed(2) || '0.00'} <br />
+                  <b>Total Amount:</b> {formatINR(order.totalAmount || 0)} <br />
                   <b>Date:</b> {new Date(order.createdAt).toLocaleString()} <br />
                   <b>Items:</b>
                   <ul>
                     {order.items.map((item, idx) => (
-                      <li key={idx}>{item.title} - ${item.price} {item.note && `(Note: ${item.note})`}</li>
+                      <li key={idx}>{item.title} - {formatINR(item.price)} {item.note && `(Note: ${item.note})`}</li>
                     ))}
                   </ul>
                 </li>
@@ -642,12 +651,12 @@ const AdminDashboard = ({ onLogout }) => {
                 <b>Customer:</b> Table {order.tableNumber} <br />
                 <b>Status:</b> {order.status} <br />
                 <b>Chef:</b> {order.chefId?.email || 'N/A'} <br />
-                <b>Total Amount:</b> ${order.totalAmount?.toFixed(2) || '0.00'} <br />
+                <b>Total Amount:</b> {formatINR(order.totalAmount || 0)} <br />
                 <b>Date:</b> {new Date(order.createdAt).toLocaleString()} <br />
                 <b>Items:</b>
                 <ul>
                   {order.items.map((item, idx) => (
-                    <li key={idx}>{item.title} - ${item.price} {item.note && `(Note: ${item.note})`}</li>
+                    <li key={idx}>{item.title} - {formatINR(item.price)} {item.note && `(Note: ${item.note})`}</li>
                   ))}
                 </ul>
               </li>
@@ -663,8 +672,8 @@ const AdminDashboard = ({ onLogout }) => {
           )}
         </section>
 
-        {/* Analytics Dashboard Section (with charts) */}
-        <AnalyticsCharts />
+  {/* Analytics Dashboard Section (with charts) */}
+  <AnalyticsCharts orders={orders} />
 
         {/* Reviews Section */}
         <section style={{ marginTop: 30, backgroundColor: '#fff', borderRadius: 8, boxShadow: '0 2px 8px #eee', padding: 24 }}>
@@ -1021,7 +1030,7 @@ const AdminDashboard = ({ onLogout }) => {
                       )}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <b>{dish.title}</b> - ${dish.price} <br />
+                      <b>{dish.title}</b> - {formatINR(dish.price)} <br />
                       <span>{dish.description}</span> <br />
                       <small>Category: {dish.categoryId?.name || 'Unknown'}</small>
                     </div>

@@ -15,12 +15,14 @@ const authRoutes = require('./routes/auth');
 const paymentRoutes = require('./routes/payment');
 const reservationRoutes = require('./routes/reservations');
 const menuRoutes = require('./routes/menu');
+const orderRoutes = require('./routes/orderRoutes');
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/menu', menuRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -35,135 +37,16 @@ mongoose.connect('mongodb://localhost:27017/restaurant-app', {
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Load models
-require('./models/Category');
-require('./models/MenuItem');
+const Category = require('./models/Category');
+const MenuItem = require('./models/MenuItem');
 const User = require('./models/User');
 const Order = require('./models/Order');
 const Review = require('./models/Review');
+const TableReservation = require('./models/TableReservation');
 
-// Auth endpoints
-app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, role } = req.body;
-  try {
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ email, password: hashedPassword, role });
-    await user.save();
-    res.status(201).json({ message: 'User created successfully' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+// Auth endpoints are handled in routes/auth.js
 
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password, role } = req.body;
-  try {
-    const user = await User.findOne({ email, role });
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-    res.json({ user: { id: user._id, email: user.email, role: user.role } });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Menu endpoints
-app.get('/api/menu/categories', async (req, res) => {
-  try {
-    const categories = await Category.find().sort('name');
-    res.json(categories);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.get('/api/menu/items', async (req, res) => {
-  try {
-    const items = await MenuItem.find({ isActive: true }).populate('categoryId');
-    res.json(items);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.post('/api/menu/categories', async (req, res) => {
-  try {
-    const { name, filter, dishesPerCategory, description } = req.body;
-    const category = new Category({ name, filter, dishesPerCategory, description });
-    await category.save();
-    res.status(201).json(category);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.put('/api/menu/categories/:id', async (req, res) => {
-  try {
-    const { name, filter, dishesPerCategory, description } = req.body;
-    const category = await Category.findByIdAndUpdate(
-      req.params.id,
-      { name, filter, dishesPerCategory, description },
-      { new: true }
-    );
-    res.json(category);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.delete('/api/menu/categories/:id', async (req, res) => {
-  try {
-    // First delete all menu items in this category
-    await MenuItem.deleteMany({ categoryId: req.params.id });
-    // Then delete the category
-    await Category.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Category and all its items deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.post('/api/menu/items', async (req, res) => {
-  try {
-    const { categoryId, title, price, description, image } = req.body;
-    const menuItem = new MenuItem({ categoryId, title, price, description, image });
-    await menuItem.save();
-    res.status(201).json(menuItem);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.put('/api/menu/items/:id', async (req, res) => {
-  try {
-    const { title, price, description, image, isActive } = req.body;
-    const menuItem = await MenuItem.findByIdAndUpdate(
-      req.params.id,
-      { title, price, description, image, isActive },
-      { new: true }
-    );
-    res.json(menuItem);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.delete('/api/menu/items/:id', async (req, res) => {
-  try {
-    await MenuItem.findByIdAndUpdate(req.params.id, { isActive: false });
-    res.json({ message: 'Item deactivated successfully' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+// Menu endpoints are handled by routes/menu.js
 
 // Review endpoints
 
@@ -292,11 +175,24 @@ app.get('/api/orders/customer/:tableNumber', async (req, res) => {
 app.post('/api/orders', async (req, res) => {
   try {
     const { tableNumber, items, status } = req.body;
-    const totalAmount = items.reduce((sum, item) => sum + item.price, 0);
+    if (!tableNumber) {
+      return res.status(400).json({ message: 'tableNumber is required' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'items array is required' });
+    }
+    // Normalize prices to numbers to avoid NaN
+    const normalizedItems = items.map(it => ({
+      title: it.title,
+      price: Number(it.price) || 0,
+      note: it.note || '',
+      menuItemId: it.menuItemId
+    }));
+    const totalAmount = normalizedItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
     // If status is 'pending' or missing, set to 'placed'
     let orderStatus = status;
     if (!orderStatus || orderStatus === 'pending') orderStatus = 'placed';
-    const order = new Order({ tableNumber, items, totalAmount, status: orderStatus });
+    const order = new Order({ tableNumber, items: normalizedItems, totalAmount, status: orderStatus });
     await order.save();
     
     // Emit real-time update to all connected clients
@@ -327,13 +223,14 @@ app.put('/api/orders/:id/status', async (req, res) => {
 });
 
 // User interaction tracking
+// Interaction tracking (dev no-op to avoid undefined model crashes)
 app.post('/api/interactions', async (req, res) => {
   try {
-    const { userId, tableNumber, action, itemId } = req.body;
-    const interaction = new UserInteraction({ userId, tableNumber, action, itemId });
-    await interaction.save();
-    res.status(201).json(interaction);
+    const { userId, tableNumber, action, itemId } = req.body || {};
+    console.log('Interaction:', { userId, tableNumber, action, itemId, ts: new Date().toISOString() });
+    res.status(201).json({ ok: true });
   } catch (err) {
+    console.error('Error handling interaction:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -374,7 +271,7 @@ io.on('connection', (socket) => {
   });
 
   // Chef updates order status
-  socket.on('updateOrderStatus', async ({ orderId, status, chefId, message, tableNumber }) => {
+  socket.on('updateOrderStatus', async ({ orderId, status, chefId, message }) => {
     try {
       const order = await Order.findByIdAndUpdate(orderId, { status, chefId, updatedAt: Date.now() });
       const updatedOrders = await Order.find().populate('chefId', 'email').sort('-createdAt');
@@ -383,7 +280,7 @@ io.on('connection', (socket) => {
       io.emit('orders', updatedOrders);
       
       // Always emit the notification with the updated status
-      const tableNumber = order.tableNumber;
+      const tblNumber = order?.tableNumber;
       let notificationMessage = '';
       switch(status) {
         case 'accepted':
@@ -406,7 +303,7 @@ io.on('connection', (socket) => {
       }
 
       io.emit('orderNotification', {
-        tableNumber,
+        tableNumber: tblNumber,
         message: notificationMessage,
         status
       });
@@ -420,5 +317,13 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Development: log unhandled errors to diagnose crashes
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});

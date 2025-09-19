@@ -5,8 +5,9 @@ import api from '../utils/api';
 const Login = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('customer');
+  const [role, setRole] = useState('customer'); // desired portal
   const [error, setError] = useState('');
+  const [serverRole, setServerRole] = useState(null); // actual role from server
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,14 +20,25 @@ const Login = ({ onLogin }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const response = await api.post('/auth/login', { email, password, role });
+      const response = await api.post('/auth/login', { email, password });
       const userData = {
         ...response.data.user,
         token: response.data.token
       };
-      localStorage.setItem('user', JSON.stringify(userData)); // Save user data including token
+      // Save user and mark logged in
+      localStorage.setItem('user', JSON.stringify(userData));
       onLogin(userData);
-      navigate(`/${role}`);
+
+      // Enforce portal access: selected role must match server-verified role
+      const actualRole = response.data.user.role;
+      if (role !== actualRole) {
+        setServerRole(actualRole);
+        setError(`This account is a "${actualRole}". You cannot access the "${role}" portal.`);
+        return; // stay on login to let user pick the right portal
+      }
+
+      // Navigate to the selected/actual role page
+      navigate(`/${actualRole}`);
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed');
     }
@@ -58,7 +70,7 @@ const Login = ({ onLogin }) => {
           />
         </div>
         <div className="form-group">
-          <label htmlFor="role">Role:</label>
+          <label htmlFor="role">Login as:</label>
           <select id="role" value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="customer">Customer</option>
             <option value="chef">Chef</option>
@@ -66,6 +78,16 @@ const Login = ({ onLogin }) => {
           </select>
         </div>
         {error && <p className="error-message">{error}</p>}
+        {serverRole && role !== serverRole && (
+          <button
+            type="button"
+            className="login-btn"
+            onClick={() => navigate(`/${serverRole}`)}
+            style={{ marginBottom: '8px' }}
+          >
+            Go to my {serverRole} dashboard
+          </button>
+        )}
         <button type="submit" className="login-btn">Login</button>
       </form>
       <p>

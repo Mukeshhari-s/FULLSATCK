@@ -67,6 +67,24 @@
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.button-container .icon-buttons {
+  display: flex;
+  gap: 1rem;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.button-container .review-row {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.button-container .review-row .review-button {
+  margin-top: 6px;
 }
 
 .button-container button {
@@ -99,4 +117,61 @@
 .button-container i {
   font-size: 18px;
   line-height: 1;
+}
+
+/* New: prominent pill-style review button */
+.review-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  height: 44px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffd54f 0%, #ffc107 100%);
+  color: #212529;
+  border: 1px solid #ffca28;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+}
+
+/* Increase specificity to override circular defaults */
+.button-container .review-button {
+  width: auto;
+  min-width: 140px;
+  padding: 10px 16px;
+  border-radius: 999px;
+}
+
+/* Icon-only (round) buttons shouldn't affect review-button */
+.button-container .icon-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.review-button .review-star {
+  color: #ff9800;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.review-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.12);
+  filter: brightness(1.02);
+}
+
+.review-button:focus-visible {
+  outline: 3px solid rgba(25, 118, 210, 0.4);
+  outline-offset: 2px;
+}
+
+.review-button.disabled,
+.review-button:disabled {
+  background: #e9ecef;
+  border-color: #dee2e6;
+  color: #6c757d;
+  cursor: not-allowed;
+  box-shadow: none;
 }

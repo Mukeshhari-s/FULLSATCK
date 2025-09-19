@@ -29,9 +29,11 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   const socketRef = useRef(null);
   const [notification, setNotification] = useState('');
   const [notificationStatus, setNotificationStatus] = useState('');
+  const [toast, setToast] = useState('');
   const [categories, setCategories] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [menuRetryCount, setMenuRetryCount] = useState(0);
   const [showTrackOrderModal, setShowTrackOrderModal] = useState(false);
   
   // Review-related state
@@ -49,6 +51,8 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [transactionCompleted, setTransactionCompleted] = useState(false);
   const [qrCodeData, setQrCodeData] = useState('');
+  // INR formatter
+  const formatINR = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(value) || 0);
 
   // Define roman numerals array at the top of the component
   const romanNumerals = ['i)', 'ii)', 'iii)', 'iv)', 'v)', 'vi)', 'vii)', 'viii)', 'ix)', 'x)'];
@@ -60,22 +64,36 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
         api.get('/menu/public/categories'),
         api.get('/menu/public/items')
       ]);
-      
-      console.log('Categories Response:', categoriesResponse.data);
-      console.log('Menu Items Response:', itemsResponse.data);
-      console.log('Sample Menu Item Structure:', itemsResponse.data[0]);
-      
-      setCategories(categoriesResponse.data);
-      setMenuItems(itemsResponse.data);
+
+      const cats = Array.isArray(categoriesResponse.data) ? categoriesResponse.data : [];
+      const items = Array.isArray(itemsResponse.data) ? itemsResponse.data : [];
+
+      setCategories(cats);
+      setMenuItems(items);
       setLoading(false);
+
+      // Reset retry counter on success with data
+      if (cats.length > 0 && items.length > 0) {
+        setMenuRetryCount(0);
+      } else if (menuRetryCount < 5) {
+        // Retry if empty responses (e.g., backend just started)
+        const next = menuRetryCount + 1;
+        setMenuRetryCount(next);
+        setTimeout(fetchMenuData, Math.min(5000, 1000 * next));
+      }
     } catch (err) {
-      console.error('Error fetching menu data:', err);
+      console.error('Error fetching menu data:', err?.response?.data || err.message);
       setLoading(false);
+      if (menuRetryCount < 5) {
+        const next = menuRetryCount + 1;
+        setMenuRetryCount(next);
+        setTimeout(fetchMenuData, Math.min(5000, 1000 * next));
+      }
     }
   };
 
   // Fetch orders data for the current table
-    const fetchOrders = async () => {
+  const fetchOrders = async () => {
     try {
       if (tableNumber) {
         const response = await api.get(`/orders/customer/${tableNumber}`);
@@ -88,29 +106,17 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
 
   // Group menu items by category
   const groupedItems = categories.reduce((acc, category) => {
-    console.log('Processing category:', category);
-    const categoryItems = menuItems.filter(item => {
-      console.log('Checking item:', item);
-      console.log('Item categoryId:', item.categoryId);
-      console.log('Category _id:', category._id);
-      return (
-        (item.categoryId?._id === category._id) || // Populated categoryId
-        (item.categoryId === category._id) || // Direct ID reference
-        (item.category === category._id) // Alternative field name
-      );
-    });
-    console.log(`Found ${categoryItems.length} items for category ${category.name}`);
+    const categoryItems = menuItems.filter(item => (
+      (item.categoryId?._id === category._id) ||
+      (item.categoryId === category._id) ||
+      (item.category === category._id)
+    ));
     acc[category.filter] = categoryItems;
     return acc;
   }, {});
 
-  const handleFilter = (type) => {
-    setFilterType(type);
-  };
-
-  const handleSearch = (e) => {
-    setSearchTerm(e.target.value.toLowerCase());
-  };
+  const handleFilter = (type) => setFilterType(type);
+  const handleSearch = (e) => setSearchTerm(e.target.value.toLowerCase());
 
   const addToCart = (item) => {
     setItemToAdd(item);
@@ -198,9 +204,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     }
   };
 
-  const calculateTotal = () => {
-    return cart.reduce((total, item) => total + item.price, 0);
-  };
+  const calculateTotal = () => cart.reduce((total, item) => total + Number(item.price || 0), 0);
 
   // New payment functions
   const initiatePayment = () => {
@@ -208,16 +212,6 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
       alert('Please select a table and add items to your cart before proceeding to payment.');
       return;
     }
-    
-    // Generate QR code data (you can provide your custom QR data here)
-    const paymentData = {
-      tableNumber,
-      totalAmount: calculateTotal(),
-      timestamp: new Date().toISOString(),
-      orderId: `ORDER-${tableNumber}-${Date.now()}`
-    };
-    
-    // You can replace this with your custom QR code data
     const qrData = `upi://pay?pa=merchant@upi&pn=Restaurant&am=${calculateTotal()}&cu=INR&tn=Table${tableNumber}Order`;
     setQrCodeData(qrData);
     setShowPaymentModal(true);
@@ -226,21 +220,17 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
 
   const simulateTransaction = () => {
     setPaymentProcessing(true);
-    
-    // Simulate transaction processing
     setTimeout(() => {
       setPaymentProcessing(false);
       setTransactionCompleted(true);
-      
-      // After successful transaction, proceed to place order
       setTimeout(() => {
         setShowPaymentModal(false);
         placeOrder();
       }, 2000);
-    }, 3000); // 3 seconds simulation
+    }, 3000);
   };
 
-  const placeOrder = () => {
+  const placeOrder = async () => {
     if (!tableNumber || cart.length === 0) {
       alert('Please select a table and add items to your cart before placing an order.');
       return;
@@ -254,15 +244,15 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
         tableNumber,
         items: cart,
         totalAmount: calculateTotal(),
-        status: 'placed', // Always send 'placed' for new orders
+        status: 'placed',
       };
       api.post('/orders', orderData)
         .then(response => {
           setOrders(prev => [...prev, response.data]);
           setOrderHistory(prev => [...prev, ...cart]);
           setCart([]);
-          alert('Order placed successfully!');
-          // No need to emit socket.io event - backend handles real-time updates
+          setToast('Order placed successfully');
+          setTimeout(() => setToast(''), 2000);
         })
         .catch(error => {
           console.error('Error placing order:', error);
@@ -276,20 +266,11 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
 
   // Review functions
   const openReviewModal = (dishId, dishTitle) => {
-    console.log('Opening review modal for:', { dishId, dishTitle });
-    
-    // Check if the dish has been ordered and completed
     if (!hasOrderedDish(dishId, dishTitle)) {
       alert(`You can only review dishes that you have ordered and completed. Please order "${dishTitle}" first to leave a review.`);
       return;
     }
-    
-    setReviewForm({
-      dishId,
-      dishTitle,
-      rating: 5,
-      comment: ''
-    });
+    setReviewForm({ dishId, dishTitle, rating: 5, comment: '' });
     setShowReviewModal(true);
   };
 
@@ -299,22 +280,12 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
       alert('Please select a table number first.');
       return;
     }
-
     if (!reviewForm.comment.trim()) {
       alert('Please enter a review comment.');
       return;
     }
-
     setSubmittingReview(true);
     try {
-      console.log('Submitting review:', {
-        dishId: reviewForm.dishId,
-        userId: `table-${tableNumber}`,
-        userName: `Table ${tableNumber}`,
-        rating: reviewForm.rating,
-        comment: reviewForm.comment
-      });
-
       const response = await api.post('/reviews', {
         dishId: reviewForm.dishId,
         userId: `table-${tableNumber}`,
@@ -322,178 +293,122 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
         rating: reviewForm.rating,
         comment: reviewForm.comment
       });
-      
-      console.log('Review submission successful:', response.data);
       alert('Review submitted successfully! Thank you for your feedback.');
       setShowReviewModal(false);
       setReviewForm({ dishId: '', dishTitle: '', rating: 5, comment: '' });
     } catch (error) {
-      console.error('Error submitting review:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      
       let errorMessage = 'Failed to submit review. ';
-      if (error.response) {
-        // Server responded with error status
-        errorMessage += `Server error: ${error.response.data?.message || error.response.statusText}`;
-      } else if (error.request) {
-        // Request was made but no response received
-        errorMessage += 'No response from server. Please check if the backend is running.';
-      } else {
-        // Something else happened
-        errorMessage += error.message;
-      }
-      
+      if (error.response) errorMessage += `Server error: ${error.response.data?.message || error.response.statusText}`;
+      else if (error.request) errorMessage += 'No response from server. Please check if the backend is running.';
+      else errorMessage += error.message;
       alert(errorMessage);
     } finally {
       setSubmittingReview(false);
     }
   };
 
-  const handleReviewFormChange = (field, value) => {
-    setReviewForm(prev => ({ ...prev, [field]: value }));
-  };
+  const handleReviewFormChange = (field, value) => setReviewForm(prev => ({ ...prev, [field]: value }));
 
   // Check if a dish has been ordered by this table
   const hasOrderedDish = (dishId, dishTitle) => {
-    // Check in completed orders
     const orderedItems = orders
-      .filter(order => order.status === 'completed') // Only completed orders
+      .filter(order => order.status === 'completed')
       .flatMap(order => order.items || []);
-    
-    // Check by dishId first, then fall back to title matching
-    const hasOrdered = orderedItems.some(item => 
-      item.menuItemId === dishId || 
-      item._id === dishId || 
-      item.title === dishTitle
-    );
-
-    return hasOrdered;
+    return orderedItems.some(item => item.menuItemId === dishId || item._id === dishId || item.title === dishTitle);
   };
 
-  useEffect(() => {
-    fetchMenuData();
+  useEffect(() => { fetchMenuData(); // initial load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (tableNumber) {
       const storedOrders = localStorage.getItem(`orders-${tableNumber}`);
-      if (storedOrders) {
-        setOrders(JSON.parse(storedOrders));
-      }
+      if (storedOrders) setOrders(JSON.parse(storedOrders));
 
       // Initial fetch of orders
       fetchOrders();
 
-      // Set up Socket.IO connection
-      socketRef.current = io('http://localhost:5000');
+      // Set up Socket.IO connection derived from API base
+      try {
+        const apiBase = (import.meta.env && import.meta.env.VITE_API_BASE_URL) || 'http://localhost:5000/api';
+        const url = new URL(apiBase);
+        const socketOrigin = `${url.protocol}//${url.host}`; // e.g., http://localhost:5000
+        socketRef.current = io(socketOrigin, { transports: ['websocket', 'polling'] });
+      } catch (e) {
+        // Fallback
+        socketRef.current = io('http://localhost:5000');
+      }
       
-      // Listen for order updates
       socketRef.current.on('orders', (allOrders) => {
-        console.log('Received orders update:', allOrders);
         const tableOrders = allOrders.filter(o => o.tableNumber.toString() === tableNumber.toString());
         if (tableOrders.length > 0) {
-          console.log('Orders for table', tableNumber, ':', tableOrders);
           setOrders(tableOrders);
-          
-          // Store orders in localStorage
           localStorage.setItem(`orders-${tableNumber}`, JSON.stringify(tableOrders));
-          
           const latestOrder = tableOrders[tableOrders.length - 1];
-          if (latestOrder) {
-            setOrderStatus(latestOrder.status);
-          }
+          if (latestOrder) setOrderStatus(latestOrder.status);
         }
       });
 
-      // Listen for notifications from chef
       socketRef.current.on('orderNotification', (data) => {
         if (data.tableNumber === tableNumber) {
           setNotification(data.message);
           setNotificationStatus(data.status);
-          // Fetch updated orders when notification is received
           fetchOrders();
         }
       });
 
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.disconnect();
-        }
-      };
+      return () => { if (socketRef.current) socketRef.current.disconnect(); };
     }
   }, [tableNumber]);
 
   // Load saved data from localStorage
   useEffect(() => {
     if (tableNumber) {
-      // Load cart from localStorage
       const storedCart = localStorage.getItem(`cart-${tableNumber}`);
-      if (storedCart) {
-        try {
-          const parsedCart = JSON.parse(storedCart);
-          setCart(parsedCart);
-          console.log('Loaded cart:', parsedCart);
-        } catch (err) {
-          console.error('Error loading cart from localStorage:', err);
-        }
+      if (storedCart) { try { setCart(JSON.parse(storedCart)); } catch {}
       }
-
-      // Load wishlist from localStorage
       const storedWishlist = localStorage.getItem(`wishlist-${tableNumber}`);
-      if (storedWishlist) {
-        try {
-          const parsedWishlist = JSON.parse(storedWishlist);
-          setWishlist(parsedWishlist);
-          console.log('Loaded wishlist:', parsedWishlist);
-        } catch (err) {
-          console.error('Error loading wishlist from localStorage:', err);
-        }
+      if (storedWishlist) { try { setWishlist(JSON.parse(storedWishlist)); } catch {}
       }
-
-      // Load order history from localStorage
       const storedOrderHistory = localStorage.getItem(`orderHistory-${tableNumber}`);
-      if (storedOrderHistory) {
-        try {
-          const parsedOrderHistory = JSON.parse(storedOrderHistory);
-          setOrderHistory(parsedOrderHistory);
-          console.log('Loaded order history:', parsedOrderHistory);
-        } catch (err) {
-          console.error('Error loading order history from localStorage:', err);
-        }
+      if (storedOrderHistory) { try { setOrderHistory(JSON.parse(storedOrderHistory)); } catch {}
       }
     }
   }, [tableNumber]);
 
   // Save data to localStorage whenever it changes
   useEffect(() => {
-    const saveDataToLocalStorage = () => {
-      if (tableNumber) {
-        try {
-          // Save cart
-          localStorage.setItem(`cart-${tableNumber}`, JSON.stringify(cart || []));
-          console.log('Saved cart:', cart);
-
-          // Save wishlist
-          localStorage.setItem(`wishlist-${tableNumber}`, JSON.stringify(wishlist || []));
-          console.log('Saved wishlist:', wishlist);
-
-          // Save order history
-          localStorage.setItem(`orderHistory-${tableNumber}`, JSON.stringify(orderHistory || []));
-          console.log('Saved order history:', orderHistory);
-        } catch (error) {
-          console.error('Error saving data to localStorage:', error);
-        }
+    if (tableNumber) {
+      try {
+        localStorage.setItem(`cart-${tableNumber}`, JSON.stringify(cart || []));
+        localStorage.setItem(`wishlist-${tableNumber}`, JSON.stringify(wishlist || []));
+        localStorage.setItem(`orderHistory-${tableNumber}`, JSON.stringify(orderHistory || []));
+      } catch (error) {
+        console.error('Error saving data to localStorage:', error);
       }
-    };
-
-    saveDataToLocalStorage();
+    }
   }, [cart, wishlist, orderHistory, tableNumber]);
 
   if (loading) {
     return (
       <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <div className="loading-text">Loading Menu...</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, width: '100%', padding: 20 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' }}>
+              <div style={{ height: 150, background: 'linear-gradient(90deg, #eee, #f5f5f5, #eee)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+              <div style={{ padding: 12 }}>
+                <div style={{ height: 18, width: '60%', background: '#eee', marginBottom: 10 }} />
+                <div style={{ height: 14, width: '90%', background: '#f0f0f0', marginBottom: 8 }} />
+                <div style={{ height: 14, width: '80%', background: '#f0f0f0', marginBottom: 14 }} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0f0f0' }} />
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0f0f0' }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -506,12 +421,9 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           onChange={e => {
             const selectedTable = e.target.value;
             setTableNumber(selectedTable);
-            
-            // Load saved data when table is selected
             const storedCart = localStorage.getItem(`cart-${selectedTable}`);
             const storedWishlist = localStorage.getItem(`wishlist-${selectedTable}`);
             const storedOrderHistory = localStorage.getItem(`orderHistory-${selectedTable}`);
-            
             if (storedCart) setCart(JSON.parse(storedCart));
             if (storedWishlist) setWishlist(JSON.parse(storedWishlist));
             if (storedOrderHistory) setOrderHistory(JSON.parse(storedOrderHistory));
@@ -527,26 +439,24 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
     );
   }
 
-  // Get notification style based on status
   const getNotificationStyle = (status) => {
     switch(status) {
-      case 'accepted':
-        return { backgroundColor: '#4CAF50', color: 'white' };
-      case 'preparing':
-        return { backgroundColor: '#2196F3', color: 'white' };
-      case 'ready':
-        return { backgroundColor: '#FF9800', color: 'white' };
-      case 'completed':
-        return { backgroundColor: '#4CAF50', color: 'white' };
-      case 'cancelled':
-        return { backgroundColor: '#f44336', color: 'white' };
-      default:
-        return { backgroundColor: '#757575', color: 'white' };
+      case 'accepted': return { backgroundColor: '#4CAF50', color: 'white' };
+      case 'preparing': return { backgroundColor: '#2196F3', color: 'white' };
+      case 'ready': return { backgroundColor: '#FF9800', color: 'white' };
+      case 'completed': return { backgroundColor: '#4CAF50', color: 'white' };
+      case 'cancelled': return { backgroundColor: '#f44336', color: 'white' };
+      default: return { backgroundColor: '#757575', color: 'white' };
     }
   };
 
   return (
     <div>
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 20, right: 20, background: '#4caf50', color: '#fff', padding: '10px 14px', borderRadius: 6, boxShadow: '0 4px 10px rgba(0,0,0,0.15)', zIndex: 1100 }}>
+          {toast}
+        </div>
+      )}
       {/* Notification Display */}
       {notification && (
         <div
@@ -638,200 +548,141 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           </div>
         </div>
       </header>
-{/* Track Order Modal */}
-<div id="track-order-modal" className="modal" style={{ display: showTrackOrderModal ? 'block' : 'none' }}>
-  <div className="modal-content" style={{ maxWidth: '800px', margin: 'auto' }}>
-    <span className="close-btn" onClick={() => setShowTrackOrderModal(false)}>×</span>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-      <h2>Track Your Orders</h2>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <button
-          onClick={fetchOrders}
-          style={{
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            padding: '8px 15px',
-            borderRadius: '20px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '5px'
-          }}
-        >
-          <i className="fas fa-sync-alt"></i> Refresh
-        </button>
-        <div style={{ 
-          backgroundColor: '#f0f0f0',
-          padding: '8px 15px',
-          borderRadius: '20px',
-          fontWeight: 'bold'
-        }}>
-          Table #{tableNumber}
-        </div>
-      </div>
-    </div>
-    <div style={{ marginBottom: '20px' }}>
-      <button
-        onClick={clearOrders}
-        style={{
-          backgroundColor: '#f44336',
-          color: 'white',
-          border: 'none',
-          padding: '8px 15px',
-          borderRadius: '20px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px'
-        }}
-      >
-        <i className="fas fa-trash-alt"></i> Clear All Orders
-      </button>
-    </div>
 
-    {loading ? (
-      <div style={{ textAlign: 'center', padding: '20px' }}>
-        <p>Loading orders...</p>
-      </div>
-    ) : orders.length > 0 ? (
-      <div className="order-tracking">
-        {orders
-          .filter(order => order.tableNumber.toString() === tableNumber.toString())
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .map(order => (
-            <div 
-              key={order._id} 
-              style={{
-                border: '1px solid #ddd',
-                borderRadius: '8px',
-                margin: '10px 0',
-                padding: '15px',
-                backgroundColor: 
-                  order.status === 'completed' ? '#e8f5e9' :
-                  order.status === 'cancelled' ? '#ffebee' :
-                  order.status === 'ready' ? '#fff3e0' :
-                  order.status === 'preparing' ? '#e3f2fd' :
-                  order.status === 'accepted' ? '#f3e5f5' : '#fff'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <span><strong>Order Time:</strong> {new Date(order.createdAt).toLocaleString()}</span>
-                <span><strong>Total:</strong> ${order.totalAmount?.toFixed(2)}</span>
-              </div>
-              <div style={{ 
-                backgroundColor: '#fff',
-                padding: '10px',
-                borderRadius: '4px',
-                marginBottom: '10px'
-              }}>
-                <h4 style={{ margin: '0 0 10px 0' }}>Items:</h4>
-                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                  {order.items.map((item, idx) => (
-                    <li key={idx} style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between',
-                      padding: '5px 0',
-                      borderBottom: idx < order.items.length - 1 ? '1px solid #eee' : 'none'
-                    }}>
-                      <span>{item.title}</span>
-                      <span>${item.price}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div style={{ 
-                backgroundColor: '#f8f9fa',
-                padding: '10px',
-                borderRadius: '4px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <span><strong>Status:</strong></span>
-                <div style={{
-                  padding: '5px 10px',
-                  borderRadius: '15px',
-                  backgroundColor: 
-                    order.status === 'completed' ? '#4caf50' :
-                    order.status === 'cancelled' ? '#f44336' :
-                    order.status === 'ready' ? '#ff9800' :
-                    order.status === 'preparing' ? '#2196f3' :
-                    order.status === 'accepted' ? '#9c27b0' : '#757575',
-                  color: 'white',
-                  textTransform: 'capitalize'
-                }}>
-                  {order.status}
-                </div>
+      {/* Track Order Modal */}
+      <div id="track-order-modal" className="modal" style={{ display: showTrackOrderModal ? 'block' : 'none' }}>
+        <div className="modal-content" style={{ maxWidth: '800px', margin: 'auto' }}>
+          <span className="close-btn" onClick={() => setShowTrackOrderModal(false)}>×</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h2>Track Your Orders</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <button onClick={fetchOrders} style={{ backgroundColor: '#4CAF50', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <i className="fas fa-sync-alt"></i> Refresh
+              </button>
+              <div style={{ backgroundColor: '#f0f0f0', padding: '8px 15px', borderRadius: '20px', fontWeight: 'bold' }}>
+                Table #{tableNumber}
               </div>
             </div>
-          ))}
+          </div>
+          <div style={{ marginBottom: '20px' }}>
+            <button onClick={clearOrders} style={{ backgroundColor: '#f44336', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <i className="fas fa-trash-alt"></i> Clear All Orders
+            </button>
+          </div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: '20px' }}>
+              <p>Loading orders...</p>
+            </div>
+          ) : orders.length > 0 ? (
+            <div className="order-tracking">
+              {orders
+                .filter(order => order.tableNumber.toString() === tableNumber.toString())
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .map(order => (
+                  <div 
+                    key={order._id} 
+                    style={{
+                      border: '1px solid #ddd',
+                      borderRadius: '8px',
+                      margin: '10px 0',
+                      padding: '15px',
+                      backgroundColor: 
+                        order.status === 'completed' ? '#e8f5e9' :
+                        order.status === 'cancelled' ? '#ffebee' :
+                        order.status === 'ready' ? '#fff3e0' :
+                        order.status === 'preparing' ? '#e3f2fd' :
+                        order.status === 'accepted' ? '#f3e5f5' : '#fff'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span><strong>Order Time:</strong> {new Date(order.createdAt).toLocaleString()}</span>
+                      <span><strong>Total:</strong> {formatINR(order.totalAmount)}</span>
+                    </div>
+                    <div style={{ 
+                      backgroundColor: '#fff',
+                      padding: '10px',
+                      borderRadius: '4px',
+                      marginBottom: '10px'
+                    }}>
+                      <h4 style={{ margin: '0 0 10px 0' }}>Items:</h4>
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                        {order.items.map((item, idx) => (
+                          <li key={idx} style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between',
+                            padding: '5px 0',
+                            borderBottom: idx < order.items.length - 1 ? '1px solid #eee' : 'none'
+                          }}>
+                            <span>{item.title}</span>
+                            <span>{formatINR(item.price)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div style={{ 
+                      backgroundColor: '#f8f9fa',
+                      padding: '10px',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}>
+                      <span><strong>Status:</strong></span>
+                      <div style={{
+                        padding: '5px 10px',
+                        borderRadius: '15px',
+                        backgroundColor: 
+                          order.status === 'completed' ? '#4caf50' :
+                          order.status === 'cancelled' ? '#f44336' :
+                          order.status === 'ready' ? '#ff9800' :
+                          order.status === 'preparing' ? '#2196f3' :
+                          order.status === 'accepted' ? '#9c27b0' : '#757575',
+                        color: 'white',
+                        textTransform: 'capitalize'
+                      }}>
+                        {order.status}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p>No orders found for your table.</p>
+          )}
+        </div>
       </div>
-    ) : (
-      <p>No orders found for your table.</p>
-    )}
-  </div>
-</div>
 
-      <section className="filters">
+      <section className="filters" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {categories.map((category) => (
-          <button
-            key={category._id}
-            type="button"
-            className="filter-btn"
-            data-filter={category.filter}
-            onClick={() => handleFilter(category.filter)}
-          >
+          <button key={category._id} type="button" className="filter-btn" data-filter={category.filter} onClick={() => handleFilter(category.filter)}>
             {category.name}
           </button>
         ))}
-        <button
-          type="button"
-          className="filter-btn"
-          data-filter="all"
-          onClick={() => handleFilter('all')}
-        >
+        <button type="button" className="filter-btn" data-filter="all" onClick={() => handleFilter('all')}>
           All
         </button>
+        {(!loading && categories.length === 0) && (
+          <button type="button" className="filter-btn" onClick={() => { setLoading(true); setMenuRetryCount(0); fetchMenuData(); }} title="Reload menu">
+            Reload Menu
+          </button>
+        )}
       </section>
 
       {/* Notification Display */}
       {notification && (
-        <div
-          style={{
-            padding: '15px',
-            margin: '20px auto',
-            borderRadius: '5px',
-            transition: 'all 0.3s ease',
-            maxWidth: '600px',
-            position: 'relative',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            ...getNotificationStyle(notificationStatus)
-          }}
-        >
+        <div style={{ padding: '15px', margin: '20px auto', borderRadius: '5px', transition: 'all 0.3s ease', maxWidth: '600px', position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...getNotificationStyle(notificationStatus) }}>
           <span style={{ flex: 1, textAlign: 'center' }}>{notification}</span>
-          <button
-            onClick={() => setNotification('')}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'white',
-              cursor: 'pointer',
-              fontSize: '20px',
-              fontWeight: 'bold',
-              padding: '0 10px',
-              marginLeft: '10px'
-            }}
-          >
-            ×
-          </button>
+          <button onClick={() => setNotification('')} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: '20px', fontWeight: 'bold', padding: '0 10px', marginLeft: '10px' }}>×</button>
         </div>
       )}
 
       <main>
         <div id="menu">
+          {(!loading && categories.length === 0) && (
+            <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
+              <p>No menu loaded yet. Ensure backend is running, then click "Reload Menu" above.</p>
+            </div>
+          )}
           {categories.map((category) => (
             (filterType === 'all' || filterType === category.filter) && (
               <section key={category._id} className="menu-category" id={`category-${category._id}`}>
@@ -847,18 +698,10 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
                     .map(item => (
                       <MenuItem
                         key={item._id}
-                        dish={{
-                          name: item.name || item.title,
-                          description: item.description,
-                          price: item.price,
-                          _id: item._id
-                        }}
+                        dish={{ name: item.name || item.title, description: item.description, price: item.price, _id: item._id }}
                         onAddToWishlist={() => addToWishlist(item)}
                         onAddToCart={() => addToCart(item)}
-                        onReview={hasOrderedDish(item._id, item.title || item.name) ? 
-                          () => openReviewModal(item._id, item.title || item.name) : 
-                          null
-                        }
+                        onReview={hasOrderedDish(item._id, item.title || item.name) ? () => openReviewModal(item._id, item.title || item.name) : null}
                       />
                     ))}
                 </div>
@@ -939,12 +782,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           <div className="modal-content">
             <span className="close-btn" onClick={() => setShowLogoutModal(false)}>×</span>
             <h2>Enter Key to Logout</h2>
-            <input
-              type="password"
-              value={logoutKey}
-              onChange={e => setLogoutKey(e.target.value)}
-              placeholder="Enter logout key"
-            />
+            <input type="password" value={logoutKey} onChange={e => setLogoutKey(e.target.value)} placeholder="Enter logout key" />
             <button onClick={() => {
               if (logoutKey === '1234') {
                 setShowLogoutModal(false);
@@ -966,13 +804,7 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           <div className="modal-content">
             <span className="close-btn" onClick={() => setShowAddNoteModal(false)}>×</span>
             <h2>Add Notes for {itemToAdd?.title}</h2>
-            <textarea
-              value={noteInput}
-              onChange={e => setNoteInput(e.target.value)}
-              placeholder="Enter any notes for this item (e.g., no onions, extra spicy)"
-              rows={4}
-              style={{ width: '100%' }}
-            />
+            <textarea value={noteInput} onChange={e => setNoteInput(e.target.value)} placeholder="Enter any notes for this item (e.g., no onions, extra spicy)" rows={4} style={{ width: '100%' }} />
             <button onClick={confirmAddToCart}>Add to Cart</button>
           </div>
         </div>
@@ -985,15 +817,8 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
             <h2>Review: {reviewForm.dishTitle}</h2>
             <form onSubmit={handleReviewSubmit}>
               <div style={{ marginBottom: '15px' }}>
-                <label htmlFor="rating" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                  Rating (1-5 stars):
-                </label>
-                <select
-                  id="rating"
-                  value={reviewForm.rating}
-                  onChange={e => handleReviewFormChange('rating', parseInt(e.target.value))}
-                  style={{ width: '100%', padding: '8px', fontSize: '16px' }}
-                >
+                <label htmlFor="rating" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Rating (1-5 stars):</label>
+                <select id="rating" value={reviewForm.rating} onChange={e => handleReviewFormChange('rating', parseInt(e.target.value))} style={{ width: '100%', padding: '8px', fontSize: '16px' }}>
                   <option value={1}>⭐ (1 star - Poor)</option>
                   <option value={2}>⭐⭐ (2 stars - Fair)</option>
                   <option value={3}>⭐⭐⭐ (3 stars - Good)</option>
@@ -1002,46 +827,14 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
                 </select>
               </div>
               <div style={{ marginBottom: '15px' }}>
-                <label htmlFor="comment" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                  Your Review:
-                </label>
-                <textarea
-                  id="comment"
-                  value={reviewForm.comment}
-                  onChange={e => handleReviewFormChange('comment', e.target.value)}
-                  placeholder="Tell us about your experience with this dish..."
-                  rows={4}
-                  style={{ width: '100%', padding: '8px', fontSize: '14px' }}
-                  required
-                />
+                <label htmlFor="comment" style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Your Review:</label>
+                <textarea id="comment" value={reviewForm.comment} onChange={e => handleReviewFormChange('comment', e.target.value)} placeholder="Tell us about your experience with this dish..." rows={4} style={{ width: '100%', padding: '8px', fontSize: '14px' }} required />
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button 
-                  type="submit" 
-                  disabled={submittingReview}
-                  style={{
-                    backgroundColor: submittingReview ? '#6c757d' : '#28a745',
-                    color: 'white',
-                    padding: '10px 20px',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: submittingReview ? 'not-allowed' : 'pointer'
-                  }}
-                >
+                <button type="submit" disabled={submittingReview} style={{ backgroundColor: submittingReview ? '#6c757d' : '#28a745', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', cursor: submittingReview ? 'not-allowed' : 'pointer' }}>
                   {submittingReview ? 'Submitting...' : 'Submit Review'}
                 </button>
-                <button 
-                  type="button"
-                  onClick={() => setShowReviewModal(false)}
-                  style={{
-                    backgroundColor: '#6c757d',
-                    color: 'white',
-                    padding: '10px 20px',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                >
+                <button type="button" onClick={() => setShowReviewModal(false)} style={{ backgroundColor: '#6c757d', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
                   Cancel
                 </button>
               </div>
@@ -1056,50 +849,21 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
           <div className="modal-content" style={{ textAlign: 'center', maxWidth: '500px' }}>
             <span className="close-btn" onClick={() => setShowPaymentModal(false)}>×</span>
             <h2>Payment Process</h2>
-            
             {!transactionCompleted && !paymentProcessing && (
               <div>
-                <p><strong>Total Amount: ${calculateTotal().toFixed(2)}</strong></p>
+                <p><strong>Total Amount: {formatINR(calculateTotal())}</strong></p>
                 <p>Scan the QR code below to complete your payment:</p>
-                
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'center', 
-                  margin: '20px 0',
-                  padding: '20px',
-                  backgroundColor: '#f9f9f9',
-                  borderRadius: '10px'
-                }}>
-                  <QRCode 
-                    value={qrCodeData} 
-                    size={200} 
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                  />
+                <div style={{ display: 'flex', justifyContent: 'center', margin: '20px 0', padding: '20px', backgroundColor: '#f9f9f9', borderRadius: '10px' }}>
+                  <QRCode value={qrCodeData} size={200} bgColor="#ffffff" fgColor="#000000" />
                 </div>
-                
                 <p style={{ fontSize: '14px', color: '#666', marginBottom: '20px' }}>
                   After scanning the QR code and completing the payment, click the button below.
                 </p>
-                
-                <button 
-                  onClick={simulateTransaction}
-                  style={{
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    padding: '12px 30px',
-                    border: 'none',
-                    borderRadius: '5px',
-                    fontSize: '16px',
-                    cursor: 'pointer',
-                    marginTop: '10px'
-                  }}
-                >
+                <button onClick={simulateTransaction} style={{ backgroundColor: '#4CAF50', color: 'white', padding: '12px 30px', border: 'none', borderRadius: '5px', fontSize: '16px', cursor: 'pointer', marginTop: '10px' }}>
                   Complete Payment
                 </button>
               </div>
             )}
-
             {paymentProcessing && (
               <div>
                 <div style={{ margin: '30px 0' }}>
@@ -1117,7 +881,6 @@ const CustomerDashboard = ({ onLogout, tableNumber, setTableNumber }) => {
                 </div>
               </div>
             )}
-
             {transactionCompleted && (
               <div>
                 <div style={{ color: '#4CAF50', fontSize: '50px', margin: '20px 0' }}>✓</div>
