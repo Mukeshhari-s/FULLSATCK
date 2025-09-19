@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed:menu": "node seed-south-indian-menu.js",
+    "seed:mock": "node seed-mock-data.js",
+    "seed:mock:fresh": "node seed-mock-data.js --fresh"
   },
   "keywords": [],
   "author": "",

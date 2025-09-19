@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { io } from 'socket.io-client';
 import './TableReservation.css';
 
-const TableReservation = () => {
+const TableReservation = ({ onReservationSuccess }) => {
     const [reservationData, setReservationData] = useState({
         customerName: '',
         customerEmail: '',
@@ -18,7 +19,10 @@ const TableReservation = () => {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [myReservations, setMyReservations] = useState([]);
+    const [lastReservation, setLastReservation] = useState(null);
+    const [slots, setSlots] = useState([]);
     const socket = io('http://localhost:5000');
+    const navigate = useNavigate();
 
     useEffect(() => {
         // Listen for real-time updates
@@ -41,8 +45,11 @@ const TableReservation = () => {
 
     useEffect(() => {
         loadExistingReservations();
-        loadMyReservations();
     }, [reservationData.reservationDate]);
+
+    useEffect(() => {
+        loadMyReservations();
+    }, [reservationData.reservationDate, reservationData.customerEmail]);
 
     const loadMyReservations = () => {
         // Filter reservations for the current user based on email if entered
@@ -75,7 +82,7 @@ const TableReservation = () => {
         setExistingReservations(prev => 
             prev.map(res => res._id === cancelledReservation._id ? cancelledReservation : res)
         );
-        
+
         // Update user's reservations
         const savedReservations = JSON.parse(localStorage.getItem('myReservations') || '[]');
         const updatedMyReservations = savedReservations.map(res => 
@@ -102,12 +109,35 @@ const TableReservation = () => {
         );
         localStorage.setItem('myReservations', JSON.stringify(updatedMyReservations));
         setMyReservations(updatedMyReservations);
-        
         // Show notification to user if their reservation was confirmed
         if (confirmedReservation.status === 'confirmed') {
             alert(`Your reservation for Table ${confirmedReservation.tableNumber} has been confirmed!`);
         }
     };
+
+    // Load time slot availability whenever date and table are selected
+    useEffect(() => {
+        const shouldLoad = reservationData.reservationDate && reservationData.tableNumber;
+        if (!shouldLoad) {
+            setSlots([]);
+            return;
+        }
+        const load = async () => {
+            try {
+                const response = await api.get('/reservations/slots', {
+                    params: {
+                        date: reservationData.reservationDate,
+                        tableNumber: reservationData.tableNumber
+                    }
+                });
+                setSlots(Array.isArray(response.data?.slots) ? response.data.slots : []);
+            } catch (err) {
+                console.error('Error loading slots:', err);
+                setSlots([]);
+            }
+        };
+        load();
+    }, [reservationData.reservationDate, reservationData.tableNumber]);
 
     const checkUpcomingReservations = () => {
         const now = new Date();
@@ -174,7 +204,16 @@ const TableReservation = () => {
             console.log('Availability response:', availabilityResponse.data);
 
             if (!availabilityResponse.data.isAvailable) {
-                setError('This table is already reserved for the selected time');
+                const { reservationConflict, orderConflict } = availabilityResponse.data;
+                let reason = 'This table is unavailable for the selected time.';
+                if (reservationConflict && orderConflict) {
+                    reason = 'Table blocked by another reservation (within 30 minutes) and currently occupied.';
+                } else if (reservationConflict) {
+                    reason = 'Table blocked by another reservation within the 30-minute buffer.';
+                } else if (orderConflict) {
+                    reason = 'Table is currently occupied or starting soon; please pick a later slot.';
+                }
+                setError(reason);
                 return;
             }
 
@@ -187,6 +226,10 @@ const TableReservation = () => {
             savedReservations.push(response.data);
             localStorage.setItem('myReservations', JSON.stringify(savedReservations));
             setMyReservations(savedReservations);
+            setLastReservation(response.data);
+            if (onReservationSuccess) {
+                try { onReservationSuccess(response.data); } catch (e) { /* no-op */ }
+            }
             
             setSuccess('Reservation created successfully!');
             setReservationData({
@@ -247,7 +290,28 @@ const TableReservation = () => {
             </div>
             
             {error && <div className="error-message">{error}</div>}
+            <div style={{fontSize:'12px', color:'#666', marginBottom: '10px'}}>
+                Note: Reservations are blocked within 30 minutes of another reservation on the same table and when a table is currently occupied.
+            </div>
             {success && <div className="success-message">{success}</div>}
+            {lastReservation && (
+                <div style={{ margin: '10px 0' }}>
+                    <button
+                        type="button"
+                        onClick={() => navigate(`/pay?table=${lastReservation.tableNumber}`)}
+                        style={{
+                            backgroundColor: '#2e7d32',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        Proceed to Payment (placeholder)
+                    </button>
+                </div>
+            )}
             
             <form onSubmit={handleSubmit} className="reservation-form">
                 <div className="form-group">
@@ -319,14 +383,26 @@ const TableReservation = () => {
                         required
                     >
                         <option value="">Select a time</option>
-                        {[...Array(14)].map((_, i) => {
-                            const hour = i + 9; // Starting from 9 AM
-                            return (
-                                <option key={hour} value={`${hour}:00`}>
-                                    {hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`}
-                                </option>
-                            );
-                        })}
+                        {Array.isArray(slots) && slots.length > 0 ? (
+                            slots.map(slot => {
+                                const hour = parseInt(String(slot.time).split(':')[0], 10);
+                                const label = hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`;
+                                return (
+                                    <option key={slot.time} value={slot.time} disabled={!slot.isAvailable}>
+                                        {label} {slot.isAvailable ? '' : '— Unavailable'}
+                                    </option>
+                                );
+                            })
+                        ) : (
+                            [...Array(14)].map((_, i) => {
+                                const hour = i + 9; // Starting from 9 AM
+                                return (
+                                    <option key={hour} value={`${hour}:00`}>
+                                        {hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`}
+                                    </option>
+                                );
+                            })
+                        )}
                     </select>
                 </div>
 

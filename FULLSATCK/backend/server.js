@@ -40,40 +40,9 @@ require('./models/MenuItem');
 const User = require('./models/User');
 const Order = require('./models/Order');
 const Review = require('./models/Review');
+const TableReservation = require('./models/TableReservation');
 
-// Auth endpoints
-app.post('/api/auth/signup', async (req, res) => {
-  const { email, password, role } = req.body;
-  try {
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
-    }
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ email, password: hashedPassword, role });
-    await user.save();
-    res.status(201).json({ message: 'User created successfully' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password, role } = req.body;
-  try {
-    const user = await User.findOne({ email, role });
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-    res.json({ user: { id: user._id, email: user.email, role: user.role } });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+// Auth endpoints are handled in routes/auth.js
 
 // Menu endpoints
 app.get('/api/menu/categories', async (req, res) => {
@@ -292,6 +261,22 @@ app.get('/api/orders/customer/:tableNumber', async (req, res) => {
 app.post('/api/orders', async (req, res) => {
   try {
     const { tableNumber, items, status } = req.body;
+
+    // Enforce reservation requirement: table must have a reservation today (pending/confirmed)
+    if (!tableNumber) {
+      return res.status(400).json({ message: 'tableNumber is required' });
+    }
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const hasReservation = await TableReservation.findOne({
+      tableNumber: parseInt(tableNumber),
+      reservationDate: { $gte: dayStart, $lt: dayEnd },
+      status: { $in: ['pending', 'confirmed'] }
+    });
+    if (!hasReservation) {
+      return res.status(403).json({ message: 'Please reserve a table before placing an order.' });
+    }
     const totalAmount = items.reduce((sum, item) => sum + item.price, 0);
     // If status is 'pending' or missing, set to 'placed'
     let orderStatus = status;
@@ -362,6 +347,20 @@ io.on('connection', (socket) => {
   // Customer places an order
   socket.on('placeOrder', async (orderData) => {
       try {
+        // Enforce reservation requirement here as well
+        const now = new Date();
+        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        const hasReservation = await TableReservation.findOne({
+          tableNumber: parseInt(orderData.tableNumber),
+          reservationDate: { $gte: dayStart, $lt: dayEnd },
+          status: { $in: ['pending', 'confirmed'] }
+        });
+        if (!hasReservation) {
+          socket.emit('orderError', { message: 'Please reserve a table before placing an order.' });
+          return;
+        }
+
         const totalAmount = orderData.items.reduce((sum, item) => sum + item.price, 0);
         // Always set status to 'placed' for new orders
         const order = new Order({ ...orderData, totalAmount, status: 'placed' });
