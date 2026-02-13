@@ -20,6 +20,18 @@ This is the frontend part of the Restaurant Menu Application built with React an
 npm install
 ```
 
+### Environment Variables
+
+Create a `.env` file in the frontend directory with the following variables:
+
+```
+VITE_UNSPLASH_ACCESS_KEY=your_unsplash_access_key
+VITE_API_BASE_URL=http://localhost:5000/api
+VITE_APP_ENV=development
+```
+
+Copy the `.env.example` file to `.env` and update the values as needed.
+
 ### Development
 ```bash
 npm run dev

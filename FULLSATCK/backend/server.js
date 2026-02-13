@@ -7,7 +7,9 @@ const { Server } = require('socket.io');
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173'
+}));
 app.use(express.json());
 
 // Load routes
@@ -30,7 +32,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Something went wrong!' });
 });
 
-mongoose.connect('mongodb://localhost:27017/restaurant-app', {
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/restaurant-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => console.log('Connected to MongoDB'))

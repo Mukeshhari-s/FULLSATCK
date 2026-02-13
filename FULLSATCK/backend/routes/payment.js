@@ -6,8 +6,8 @@ const crypto = require('crypto');
 
 // Initialize Razorpay
 const razorpay = new Razorpay({
-  key_id: 'YOUR_RAZORPAY_KEY_ID', // Replace with your Razorpay key_id
-  key_secret: 'YOUR_RAZORPAY_KEY_SECRET' // Replace with your Razorpay key_secret
+  key_id: process.env.RAZORPAY_KEY_ID || 'YOUR_RAZORPAY_KEY_ID',
+  key_secret: process.env.RAZORPAY_KEY_SECRET || 'YOUR_RAZORPAY_KEY_SECRET'
 });
 
 // Create Razorpay order
@@ -56,7 +56,7 @@ router.post('/verify', async (req, res) => {
       tableNumber
     } = req.body;
 
-    const shasum = crypto.createHmac('sha256', 'YOUR_RAZORPAY_KEY_SECRET');
+    const shasum = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || 'YOUR_RAZORPAY_KEY_SECRET');
     shasum.update(`${orderCreationId}|${razorpayPaymentId}`);
     const digest = shasum.digest('hex');
 

@@ -20,12 +20,27 @@ This is the backend API for the Restaurant Menu Application built with Node.js a
 npm install
 ```
 
+### Environment Variables
+
+Create a `.env` file in the backend directory with the following variables:
+
+```
+MONGODB_URI=mongodb://localhost:27017/restaurant-app
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+PORT=5000
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+FRONTEND_URL=http://localhost:5173
+```
+
+Copy the `.env.example` file to `.env` and update the values as needed.
+
 ### Development
 ```bash
 npm start
 ```
 
-The API server will be available at `http://localhost:3000`
+The API server will be available at `http://localhost:5000`
 
 ### Available Scripts
 - `npm start` - Start the development server

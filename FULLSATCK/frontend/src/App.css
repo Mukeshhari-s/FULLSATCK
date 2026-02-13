@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+
 /* Admin Dashboard Search Bar Styles */
 .admin-search-bar {
   display: flex;
@@ -34,7 +36,6 @@
 /* Theme overrides for user roles */
 .chef-theme, .admin-theme {
   --primary-color: #fff !important;
-  --secondary-color: #fff !important;
   --text-dark: #fff !important;
   --text-light: #fff !important;
   color: #fff !important;
@@ -63,8 +64,6 @@
 /* =========================================================================
    1. Google Fonts
    ========================================================================= */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
-
 /* =========================================================================
    2. CSS Variables
    ========================================================================= */

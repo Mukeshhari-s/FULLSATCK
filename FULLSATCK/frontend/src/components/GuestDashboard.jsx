@@ -364,7 +364,7 @@ const GuestDashboard = () => {
                             <input type="number" min="1" max="10" value={resGuests} onChange={e => setResGuests(parseInt(e.target.value || '1', 10))} />
                         </div>
                         <div className="reserve-actions">
-                            <button className="reservation-button" onClick={async () => {
+                            <button className="reservation-button" style={{ background:'#1976d2' , color:'black'}} onClick={async () => {
                                 setResError('');
                                 setResSuccess('');
                                 if (!resName || !resEmail || !resPhone) {
@@ -396,7 +396,7 @@ const GuestDashboard = () => {
                             }} disabled={checkingAvail}>
                                 {checkingAvail ? 'Checking…' : 'Check Availability'}
                             </button>
-                            <button className="reservation-button" style={{ background:'#1976d2' }} onClick={() => {
+                            <button className="reservation-button" style={{ background:'#1976d2' , color:'black'}} onClick={() => {
                                 setResError('');
                                 if (!resName || !resEmail || !resPhone) { setResError('Please enter your name, email, and phone'); return; }
                                 const firstAvail = tablesAvailability.find(r => r.isAvailable)?.tableNumber || selectedTable || 1;
@@ -423,6 +423,7 @@ const GuestDashboard = () => {
                                 <button
                                     key={t}
                                     className={`table-chip ${cls}`}
+                                    style={{ color:'black'}}
                                     title={treatUnknown ? 'Availability not loaded. Click to continue.' : (isAvailable ? 'Available' : 'Unavailable')}
                                     onClick={() => {
                                         if (!resName || !resEmail || !resPhone) {
@@ -450,9 +451,9 @@ const GuestDashboard = () => {
                     )}
 
                     {/* Explicit reservation confirm actions */}
-                    <div style={{ marginTop: 12, display:'flex', gap:10, flexWrap:'wrap' }}>
+                    <div style={{ marginTop: 12, display:'flex', gap:10, flexWrap:'wrap', color:'black'}}>
                         {selectedTable ? (
-                            <button className="reservation-button" onClick={() => confirmReservation(selectedTable)}>
+                            <button className="reservation-button" style={{ color:'black'}} onClick={() => confirmReservation(selectedTable)}>
                                 Confirm Reservation — Table {selectedTable}
                             </button>
                         ) : (
@@ -460,7 +461,7 @@ const GuestDashboard = () => {
                                 const firstAvail = tablesAvailability.find(r => r.isAvailable);
                                 const tableNum = firstAvail?.tableNumber || 1;
                                 return (
-                                    <button className="reservation-button" onClick={() => {
+                                    <button className="reservation-button" style={{ color:'black'}} onClick={() => {
                                         if (!resName || !resEmail || !resPhone) { setResError('Please enter your name, email, and phone first.'); return; }
                                         setSelectedTable(tableNum);
                                         confirmReservation(tableNum);

@@ -63,6 +63,25 @@ Backend API will be available at: http://localhost:3000
 - Node.js
 - Express.js
 
+## Environment Variables
+
+Both frontend and backend require environment variables to be configured. Copy the `.env.example` files to `.env` in each directory and update the values as needed.
+
+### Backend
+Create a `.env` file in the `backend/` directory with the following variables:
+- `MONGODB_URI`: MongoDB connection string
+- `JWT_SECRET`: Secret key for JWT token generation
+- `PORT`: Server port (default: 5000)
+- `RAZORPAY_KEY_ID`: Razorpay API key ID
+- `RAZORPAY_KEY_SECRET`: Razorpay API key secret
+- `FRONTEND_URL`: Frontend application URL for CORS
+
+### Frontend
+Create a `.env` file in the `frontend/` directory with the following variables:
+- `VITE_UNSPLASH_ACCESS_KEY`: Unsplash API key for dish images
+- `VITE_API_BASE_URL`: Backend API base URL
+- `VITE_APP_ENV`: Application environment (development/production)
+
 ## Development
 
 Both frontend and backend can be developed independently. Make sure to:
